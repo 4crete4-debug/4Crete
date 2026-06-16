@@ -1,0 +1,17 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // The tournament document — single shared state
+    match /tournament/{docId} {
+      // Anyone can READ (spectators, TVs, players viewing on phones)
+      allow read: if true;
+
+      // Anyone can WRITE too.
+      // The app already protects editing behind the admin PIN (4444),
+      // so normal viewers never get the edit buttons.
+      // This keeps setup dead-simple for a local basketball tournament.
+      allow write: if true;
+    }
+  }
+}
