@@ -672,6 +672,7 @@ function CourtPanel({ courtNum, court: rawCourt, allTeams, state, setState, isAd
   }
 
   function endGame(){
+    if(!window.confirm("Ολοκλήρωση αγώνα; Το σκορ θα καταχωρηθεί στη βαθμολογία και τα στατιστικά.")) return;
     setState(prev=>{
       const c=prev.courts[courtNum];
       const ps={...prev.playerStats};
@@ -687,8 +688,43 @@ function CourtPanel({ courtNum, court: rawCourt, allTeams, state, setState, isAd
       const [mvpTeamId]=gameMVP.key.split(":");
       const matchday=(prev.mvpHistory||[]).length+1;
       const newMvp={matchday,courtNum,name:gameMVP.name,teamId:mvpTeamId,eff:gameMVP.pts+gameMVP.reb+gameMVP.ast-gameMVP.fouls,pts:gameMVP.pts,reb:gameMVP.reb,ast:gameMVP.ast,fouls:gameMVP.fouls};
-      return {...prev,playerStats:ps,mvpHistory:[...(prev.mvpHistory||[]),newMvp],courts:{...prev.courts,[courtNum]:{...c,active:false}},version:Date.now()};
+
+      // ── Transfer final score automatically ──
+      const idA = c.teamA.teamId, idB = c.teamB.teamId;
+      const sA = c.teamA.score, sB = c.teamB.score;
+      let next = {...prev, playerStats:ps, mvpHistory:[...(prev.mvpHistory||[]),newMvp]};
+
+      // Helper to match a fixture by the two team ids (order-independent)
+      const sameMatch = (m) => (m.home===idA&&m.away===idB)||(m.home===idB&&m.away===idA);
+      // Score oriented to the match's home/away
+      const orient = (m) => m.home===idA ? {hs:String(sA),as:String(sB)} : {hs:String(sB),as:String(sA)};
+
+      // 1) Try group matches first (group phase)
+      let foundInGroups = false;
+      const ma = prev.matchesA.map(m=>{ if(sameMatch(m)){foundInGroups=true; return {...m,...orient(m),done:true};} return m; });
+      const mb = prev.matchesB.map(m=>{ if(sameMatch(m)){foundInGroups=true; return {...m,...orient(m),done:true};} return m; });
+      next.matchesA = ma; next.matchesB = mb;
+
+      // 2) If not found in groups, try playoffs bracket instead
+      if(!foundInGroups){
+        const po = {...prev.playoffs};
+        const tryPhase = (arr) => arr.map(m=>{ if(sameMatch(m)){return {...m,...orient(m),done:true};} return m; });
+        po.qf = tryPhase(po.qf);
+        po.sf = tryPhase(po.sf);
+        if(sameMatch(po.final)) po.final = {...po.final, ...orient(po.final), done:true};
+        next.playoffs = po;
+      }
+
+      next.courts = {...prev.courts,[courtNum]:{...c,active:false}};
+      next.version = Date.now();
+      return next;
     });
+  }
+
+  // Cancel game — discards everything, no score or stats recorded
+  function cancelGame(){
+    if(!window.confirm("Ακύρωση αγώνα; ΔΕΝ θα καταγραφεί τίποτα (σκορ, στατιστικά). Σαν να μην έγινε.")) return;
+    updateCourt(c=>({...c, active:false, running:false, breakRunning:false, breakTime:0, gameOver:false}));
   }
 
   function toggle(){ updateCourt(c=>({...c,running:!c.running})); }
@@ -709,11 +745,14 @@ function CourtPanel({ courtNum, court: rawCourt, allTeams, state, setState, isAd
       return {...c,[side]:t};
     });
   }
-  // Decrement a stat (double-click on REB/AST/Foul, or undo on points)
+  // Decrement a stat (− buttons). For fouls, also reduce team foul total.
   function minusStat(side,pi,field){
     updateCourt(c=>{
       const t={...c[side]};
+      const cur=t.players[pi]?.[field]||0;
+      if(cur<=0) return c; // nothing to remove
       t.players=t.players.map((p,i)=>i===pi?{...p,[field]:Math.max(0,(p[field]||0)-1)}:p);
+      if(field==="fouls") t.fouls=Math.max(0,(t.fouls||0)-1);
       return {...c,[side]:t};
     });
   }
@@ -756,8 +795,9 @@ function CourtPanel({ courtNum, court: rawCourt, allTeams, state, setState, isAd
   }
   function timeout(side){
     updateCourt(c=>{
-      if(c[side].timeouts<=0) return c;
-      return {...c,running:false,[side]:{...c[side],timeouts:c[side].timeouts-1},breakTime:45,breakRunning:true,breakLabel:`TIMEOUT — ${c[side].teamId? (allTeams.find(t=>t.id===c[side].teamId)?.name||""):""}`};
+      if((c[side].timeouts||0)<=0) return c;
+      const teamName = c[side].teamId ? (allTeams.find(t=>t.id===c[side].teamId)?.name||"") : "";
+      return {...c, running:false, [side]:{...c[side], timeouts:c[side].timeouts-1}, breakTime:45, breakRunning:true, breakLabel:`TIMEOUT — ${teamName}`};
     });
   }
   function skipBreak(){ updateCourt(c=>({...c,breakTime:0,breakRunning:false,breakLabel:""})); }
@@ -841,10 +881,19 @@ function CourtPanel({ courtNum, court: rawCourt, allTeams, state, setState, isAd
         <td style={{...S.td,textAlign:"right"}}>
           <div style={{display:"flex",gap:4,justifyContent:"flex-end",flexWrap:"wrap"}}>
             {[1,2,3].map(n=><button key={n} onClick={()=>addStat(side,pi,"pts",n)} style={{background:color,border:"none",borderRadius:6,color:"#fff",fontWeight:800,fontSize:14,padding:"4px 9px",cursor:"pointer"}} title={n===3?"+3 (μετράει τρίποντο)":`+${n} πόντοι`}>+{n}</button>)}
-            <button onClick={()=>addStat(side,pi,"reb")} onDoubleClick={()=>minusStat(side,pi,"reb")} style={{...S.btnGhost,padding:"4px 8px",fontSize:12}} title="Κλικ +1 · Διπλό κλικ −1">RB</button>
-            <button onClick={()=>addStat(side,pi,"ast")} onDoubleClick={()=>minusStat(side,pi,"ast")} style={{...S.btnGhost,padding:"4px 8px",fontSize:12}} title="Κλικ +1 · Διπλό κλικ −1">AS</button>
-            <button onClick={()=>addPlayerFoul(side,pi)} onDoubleClick={()=>minusStat(side,pi,"fouls")} style={{...S.btnGhost,padding:"4px 8px",fontSize:12,color:"#f59e0b",borderColor:"#f59e0b33"}} title="Φάουλ · Κλικ +1 · Διπλό κλικ −1">FL</button>
-            <button onClick={()=>undoPts(side,pi)} style={{...S.btnGhost,padding:"4px 8px",fontSize:12,color:"#ef4444",borderColor:"#ef444433"}} title="Αναίρεση πόντου">↩</button>
+            <button onClick={()=>undoPts(side,pi)} style={{...S.btnGhost,padding:"4px 7px",fontSize:13,color:"#ef4444",borderColor:"#ef444433"}} title="Αφαίρεση πόντου">−pt</button>
+            <span style={{display:"inline-flex",borderRadius:6,overflow:"hidden",border:"1px solid #2d3f5a"}}>
+              <button onClick={()=>minusStat(side,pi,"reb")} style={{background:"#0d1220",border:"none",color:"#ef4444",fontSize:12,fontWeight:700,padding:"4px 6px",cursor:"pointer"}}>−</button>
+              <button onClick={()=>addStat(side,pi,"reb")} style={{background:"#1e2d45",border:"none",color:"#94a3b8",fontSize:12,fontWeight:700,padding:"4px 7px",cursor:"pointer"}}>RB</button>
+            </span>
+            <span style={{display:"inline-flex",borderRadius:6,overflow:"hidden",border:"1px solid #2d3f5a"}}>
+              <button onClick={()=>minusStat(side,pi,"ast")} style={{background:"#0d1220",border:"none",color:"#ef4444",fontSize:12,fontWeight:700,padding:"4px 6px",cursor:"pointer"}}>−</button>
+              <button onClick={()=>addStat(side,pi,"ast")} style={{background:"#1e2d45",border:"none",color:"#94a3b8",fontSize:12,fontWeight:700,padding:"4px 7px",cursor:"pointer"}}>AS</button>
+            </span>
+            <span style={{display:"inline-flex",borderRadius:6,overflow:"hidden",border:"1px solid #f59e0b33"}}>
+              <button onClick={()=>minusStat(side,pi,"fouls")} style={{background:"#0d1220",border:"none",color:"#ef4444",fontSize:12,fontWeight:700,padding:"4px 6px",cursor:"pointer"}}>−</button>
+              <button onClick={()=>addPlayerFoul(side,pi)} style={{background:"#1e2d45",border:"none",color:"#f59e0b",fontSize:12,fontWeight:700,padding:"4px 7px",cursor:"pointer"}}>FL</button>
+            </span>
           </div>
         </td>
       )}
@@ -876,7 +925,7 @@ function CourtPanel({ courtNum, court: rawCourt, allTeams, state, setState, isAd
               {[0,1].map(i=>(
                 <span key={i} style={{width:14,height:14,borderRadius:3,background:i<court.teamA.timeouts?"#f97316":"#1e2d45",display:"inline-block"}}/>
               ))}
-              {isAdmin&&court.teamA.timeouts>0&&court.breakTime===0&&<button onClick={()=>timeout("teamA")} style={{...S.btnGhost,marginLeft:4,padding:"2px 10px",fontSize:11,color:"#f97316",borderColor:"#f9731633"}}>TO 45"</button>}
+              {isAdmin&&court.teamA.timeouts>0&&<button onClick={()=>timeout("teamA")} style={{...S.btnGhost,marginLeft:4,padding:"2px 10px",fontSize:11,color:"#f97316",borderColor:"#f9731633"}}>TO 45"</button>}
             </div>
           </div>
           <div style={{textAlign:"center",minWidth:220}}>
@@ -899,7 +948,8 @@ function CourtPanel({ courtNum, court: rawCourt, allTeams, state, setState, isAd
                     <button onClick={toggle} style={{...(court.running?S.btnRed:S.btnGreen),padding:"7px 18px"}} title="Spacebar">{court.running?"⏸ Παύση":"▶ Εκκίνηση"}</button>
                     <button onClick={resetPer} style={{...S.btnSecondary}} title="Επαναφορά χρόνου">↺</button>
                     <button onClick={nextPer} disabled={court.period>=4} style={{...S.btnSecondary,opacity:court.period>=4?0.4:1}} title="Επόμενη περίοδος">▶|</button>
-                    <button onClick={endGame} style={{...S.btnGhost,color:"#ef4444",borderColor:"#ef444433"}}>Τέλος</button>
+                    <button onClick={endGame} style={{...S.btnGreen,padding:"7px 16px"}}>✓ Τέλος</button>
+                    <button onClick={cancelGame} style={{...S.btnGhost,color:"#ef4444",borderColor:"#ef444433"}} title="Ακύρωση — δεν καταγράφεται τίποτα">✕ Ακύρωση</button>
                   </div>
                 )}
                 {isAdmin && <div style={{fontSize:10,color:"#334155",marginTop:6}}>Spacebar = start/stop</div>}
@@ -920,7 +970,7 @@ function CourtPanel({ courtNum, court: rawCourt, allTeams, state, setState, isAd
               {[0,1].map(i=>(
                 <span key={i} style={{width:14,height:14,borderRadius:3,background:i<court.teamB.timeouts?"#3b82f6":"#1e2d45",display:"inline-block"}}/>
               ))}
-              {isAdmin&&court.teamB.timeouts>0&&court.breakTime===0&&<button onClick={()=>timeout("teamB")} style={{...S.btnGhost,marginLeft:4,padding:"2px 10px",fontSize:11,color:"#3b82f6",borderColor:"#3b82f633"}}>TO 45"</button>}
+              {isAdmin&&court.teamB.timeouts>0&&<button onClick={()=>timeout("teamB")} style={{...S.btnGhost,marginLeft:4,padding:"2px 10px",fontSize:11,color:"#3b82f6",borderColor:"#3b82f633"}}>TO 45"</button>}
             </div>
           </div>
         </div>
