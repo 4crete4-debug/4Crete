@@ -167,15 +167,16 @@ const S = {
 const NAV_ITEMS = [
   { key:"standings", icon:"📋", label:"Βαθμολογία" },
   { key:"bracket",  icon:"🏆", label:"Bracket" },
-  { key:"live",     icon:"🔴", label:"Live Game" },
+  { key:"live",     icon:"🔴", label:"Live — 2 Γήπεδα" },
   { key:"mvp",      icon:"🏅", label:"MVP" },
   { key:"teams",    icon:"👥", label:"Ομάδες" },
   { key:"stats",    icon:"📊", label:"Στατιστικά" },
+  { key:"display",  icon:"📺", label:"Display / TV" },
 ];
 
 function Sidebar({ tab, setTab, isAdmin, liveActive, liveCount }) {
   return (
-    <div style={S.sidebar}>
+    <div className="desktop-sidebar" style={S.sidebar}>
       {/* Logo */}
       <div style={{ padding:"20px 20px 18px", borderBottom:"1px solid #1e2d45", textAlign:"center" }}>
         <img src={LEAGUE_LOGO} alt="4Crete" style={{ width:110, height:"auto", margin:"0 auto 8px", display:"block", filter:"drop-shadow(0 0 12px #f9731633)" }}/>
@@ -254,7 +255,7 @@ function StandingsTab({ state, setState, isAdmin }) {
     const stand = standings(teams, matches);
     const played = matches.filter(m=>m.done).length;
     return (
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:24 }}>
+      <div className="stack-mobile" style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:24 }}>
         {/* Standings table */}
         <div style={S.card}>
           <div style={{ ...S.cardHeader }}>
@@ -466,7 +467,7 @@ function BracketTab({ state, setState, isAdmin }) {
         </div>
       )}
 
-      <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr 1fr", gap:20 }}>
+      <div className="stack-mobile-3" style={{ display:"grid", gridTemplateColumns:"2fr 1fr 1fr", gap:20 }}>
         {/* QF */}
         <div style={S.card}>
           <div style={{ ...S.cardHeader }}>
@@ -522,7 +523,7 @@ function LiveTab({ state, setState, isAdmin }) {
   return (
     <div>
       {/* Court overview header */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:20 }}>
+      <div className="court-overview" style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:20 }}>
         {[1,2].map(n=>{
           const c = state.courts[n];
           const tA = allTeams.find(t=>t.id===c.teamA.teamId);
@@ -590,13 +591,22 @@ function LiveTab({ state, setState, isAdmin }) {
   );
 }
 
-function CourtPanel({ courtNum, court, allTeams, state, setState, isAdmin }) {
+function CourtPanel({ courtNum, court: rawCourt, allTeams, state, setState, isAdmin }) {
+  // Backwards-compat: ensure new fields exist on older saved games
+  const court = {
+    breakTime: 0, breakRunning: false, breakLabel: "",
+    ...rawCourt,
+    teamA: { timeouts: 2, ...rawCourt.teamA, players: (rawCourt.teamA?.players||[]).map(p=>({number:"",threes:0,fouls:0,...p})) },
+    teamB: { timeouts: 2, ...rawCourt.teamB, players: (rawCourt.teamB?.players||[]).map(p=>({number:"",threes:0,fouls:0,...p})) },
+  };
   const timerRef = useRef(null);
+  const breakRef = useRef(null);
   const [selA, setSelA] = useState("");
   const [selB, setSelB] = useState("");
 
   const urgent = court.timeLeft<=30&&court.timeLeft>0;
 
+  // Game clock
   useEffect(()=>{
     if(court.running&&!court.gameOver&&isAdmin){
       timerRef.current=setInterval(()=>{
@@ -606,7 +616,10 @@ function CourtPanel({ courtNum, court, allTeams, state, setState, isAdmin }) {
           const next=c.timeLeft-1;
           if(next<=0){
             if(c.period>=4) return {...prev,courts:{...prev.courts,[courtNum]:{...c,timeLeft:0,running:false,gameOver:true}},version:Date.now()};
-            return {...prev,courts:{...prev.courts,[courtNum]:{...c,timeLeft:480,running:false,period:c.period+1}},version:Date.now()};
+            // Period ends -> auto-start break: 1min after P1 & P3, 3min after P2 (halftime)
+            const breakSecs = c.period===2 ? 180 : 60;
+            const breakLabel = c.period===2 ? "ΗΜΙΧΡΟΝΟ" : "ΔΙΑΛΕΙΜΜΑ";
+            return {...prev,courts:{...prev.courts,[courtNum]:{...c,timeLeft:480,running:false,period:c.period+1,breakTime:breakSecs,breakRunning:true,breakLabel}},version:Date.now()};
           }
           return {...prev,courts:{...prev.courts,[courtNum]:{...c,timeLeft:next}},version:Date.now()};
         });
@@ -615,6 +628,35 @@ function CourtPanel({ courtNum, court, allTeams, state, setState, isAdmin }) {
     return ()=>clearInterval(timerRef.current);
   },[court.running,court.gameOver,isAdmin]);
 
+  // Break/timeout clock (counts down separately, game is paused)
+  useEffect(()=>{
+    if(court.breakRunning&&court.breakTime>0&&isAdmin){
+      breakRef.current=setInterval(()=>{
+        setState(prev=>{
+          const c={...prev.courts[courtNum]};
+          if(!c.breakRunning) return prev;
+          const next=c.breakTime-1;
+          if(next<=0) return {...prev,courts:{...prev.courts,[courtNum]:{...c,breakTime:0,breakRunning:false,breakLabel:""}},version:Date.now()};
+          return {...prev,courts:{...prev.courts,[courtNum]:{...c,breakTime:next}},version:Date.now()};
+        });
+      },1000);
+    }
+    return ()=>clearInterval(breakRef.current);
+  },[court.breakRunning,court.breakTime>0,isAdmin]);
+
+  // Spacebar => start/stop game clock
+  useEffect(()=>{
+    if(!isAdmin) return;
+    function onKey(e){
+      if(e.code==="Space" && e.target.tagName!=="INPUT" && e.target.tagName!=="SELECT"){
+        e.preventDefault();
+        if(!court.gameOver) updateCourt(c=>({...c,running:!c.running}));
+      }
+    }
+    window.addEventListener("keydown",onKey);
+    return ()=>window.removeEventListener("keydown",onKey);
+  },[isAdmin,court.gameOver,courtNum]);
+
   function updateCourt(fn){
     setState(prev=>({...prev,courts:{...prev.courts,[courtNum]:fn(prev.courts[courtNum])},version:Date.now()}));
   }
@@ -622,10 +664,11 @@ function CourtPanel({ courtNum, court, allTeams, state, setState, isAdmin }) {
   function startGame(){
     if(!selA||!selB||selA===selB) return;
     const tA=allTeams.find(t=>t.id===selA), tB=allTeams.find(t=>t.id===selB);
-    const mk=t=>t.players.map((name,i)=>({name,pts:0,reb:0,ast:0,fouls:0,key:`${t.id}:${i}`}));
+    const mk=t=>t.players.map((name,i)=>({name,number:"",pts:0,reb:0,ast:0,fouls:0,threes:0,key:`${t.id}:${i}`}));
     updateCourt(()=>({active:true,period:1,timeLeft:480,running:false,gameOver:false,
-      teamA:{teamId:selA,score:0,fouls:0,players:mk(tA)},
-      teamB:{teamId:selB,score:0,fouls:0,players:mk(tB)}}));
+      breakTime:0, breakRunning:false, breakLabel:"",
+      teamA:{teamId:selA,score:0,fouls:0,timeouts:2,players:mk(tA)},
+      teamB:{teamId:selB,score:0,fouls:0,timeouts:2,players:mk(tB)}}));
   }
 
   function endGame(){
@@ -634,8 +677,8 @@ function CourtPanel({ courtNum, court, allTeams, state, setState, isAdmin }) {
       const ps={...prev.playerStats};
       const allPlayers=[...c.teamA.players,...c.teamB.players];
       allPlayers.forEach(p=>{
-        if(!ps[p.key]) ps[p.key]={pts:0,reb:0,ast:0,fouls:0,games:0,name:p.name};
-        ps[p.key].pts+=p.pts;ps[p.key].reb+=p.reb;ps[p.key].ast+=p.ast;ps[p.key].fouls+=p.fouls;ps[p.key].games+=1;
+        if(!ps[p.key]) ps[p.key]={pts:0,reb:0,ast:0,fouls:0,threes:0,games:0,name:p.name};
+        ps[p.key].pts+=p.pts;ps[p.key].reb+=p.reb;ps[p.key].ast+=p.ast;ps[p.key].fouls+=(p.fouls||0);ps[p.key].threes=(ps[p.key].threes||0)+(p.threes||0);ps[p.key].games+=1;
       });
       const gameMVP=[...allPlayers].sort((a,b)=>{
         const ea=a.pts+a.reb+a.ast-a.fouls,eb=b.pts+b.reb+b.ast-b.fouls;
@@ -655,12 +698,26 @@ function CourtPanel({ courtNum, court, allTeams, state, setState, isAdmin }) {
   function addStat(side,pi,field,val){
     updateCourt(c=>{
       const t={...c[side]};
-      t.players=t.players.map((p,i)=>i===pi?{...p,[field]:p[field]+(val||1)}:p);
+      t.players=t.players.map((p,i)=>{
+        if(i!==pi) return p;
+        const np={...p,[field]:p[field]+(val||1)};
+        // +3 points also counts a made three
+        if(field==="pts" && val===3) np.threes=(np.threes||0)+1;
+        return np;
+      });
       if(field==="pts") t.score=t.players.reduce((s,p)=>s+p.pts,0);
       return {...c,[side]:t};
     });
   }
-  function undo(side,pi){
+  // Decrement a stat (double-click on REB/AST/Foul, or undo on points)
+  function minusStat(side,pi,field){
+    updateCourt(c=>{
+      const t={...c[side]};
+      t.players=t.players.map((p,i)=>i===pi?{...p,[field]:Math.max(0,(p[field]||0)-1)}:p);
+      return {...c,[side]:t};
+    });
+  }
+  function undoPts(side,pi){
     updateCourt(c=>{
       const t={...c[side]};
       t.players=t.players.map((p,i)=>i===pi?{...p,pts:Math.max(0,p.pts-1)}:p);
@@ -668,7 +725,43 @@ function CourtPanel({ courtNum, court, allTeams, state, setState, isAdmin }) {
       return {...c,[side]:t};
     });
   }
-  function addFoul(side){ updateCourt(c=>({...c,[side]:{...c[side],fouls:c[side].fouls+1}})); }
+  // Set jersey number for a player
+  function setPlayerNumber(side,pi,num){
+    updateCourt(c=>{
+      const t={...c[side]};
+      t.players=t.players.map((p,i)=>i===pi?{...p,number:num}:p);
+      return {...c,[side]:t};
+    });
+  }
+  // Reorder players (move up/down) — swaps positions
+  function movePlayer(side,pi,dir){
+    updateCourt(c=>{
+      const t={...c[side]};
+      const arr=[...t.players];
+      const ni=pi+dir;
+      if(ni<0||ni>=arr.length) return c;
+      [arr[pi],arr[ni]]=[arr[ni],arr[pi]];
+      t.players=arr;
+      return {...c,[side]:t};
+    });
+  }
+  // Individual player foul (counts toward EFF as -1, and team foul total)
+  function addPlayerFoul(side,pi){
+    updateCourt(c=>{
+      const t={...c[side]};
+      t.players=t.players.map((p,i)=>i===pi?{...p,fouls:(p.fouls||0)+1}:p);
+      t.fouls=(t.fouls||0)+1; // team total
+      return {...c,[side]:t};
+    });
+  }
+  function timeout(side){
+    updateCourt(c=>{
+      if(c[side].timeouts<=0) return c;
+      return {...c,running:false,[side]:{...c[side],timeouts:c[side].timeouts-1},breakTime:45,breakRunning:true,breakLabel:`TIMEOUT — ${c[side].teamId? (allTeams.find(t=>t.id===c[side].teamId)?.name||""):""}`};
+    });
+  }
+  function skipBreak(){ updateCourt(c=>({...c,breakTime:0,breakRunning:false,breakLabel:""})); }
+  function toggleBreak(){ updateCourt(c=>({...c,breakRunning:!c.breakRunning})); }
 
   // ── Setup screen ─────────────────────────────────────────────────────────────
   if(!court.active){
@@ -717,24 +810,47 @@ function CourtPanel({ courtNum, court, allTeams, state, setState, isAdmin }) {
   const tA=allTeams.find(t=>t.id===court.teamA.teamId);
   const tB=allTeams.find(t=>t.id===court.teamB.teamId);
 
-  const PlayerRow = ({p,pi,side,color})=>(
+  const PlayerRow = ({p,pi,side,color,total})=>{
+    const eff = p.pts + p.reb + p.ast - (p.fouls||0);
+    return (
     <tr style={{ background:pi%2===0?"#0d1220":"transparent",borderBottom:"1px solid #1e2d45" }}>
-      <td style={{...S.td,color,fontWeight:600}}>{p.name}</td>
+      <td style={{...S.td,color,fontWeight:600}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          {isAdmin&&(
+            <div style={{display:"flex",flexDirection:"column",gap:1}}>
+              <button onClick={()=>movePlayer(side,pi,-1)} disabled={pi===0} style={{background:"#1e2d45",border:"none",borderRadius:3,color:pi===0?"#334155":"#94a3b8",cursor:pi===0?"default":"pointer",fontSize:9,lineHeight:1,padding:"2px 4px"}} title="Πάνω">▲</button>
+              <button onClick={()=>movePlayer(side,pi,1)} disabled={pi===total-1} style={{background:"#1e2d45",border:"none",borderRadius:3,color:pi===total-1?"#334155":"#94a3b8",cursor:pi===total-1?"default":"pointer",fontSize:9,lineHeight:1,padding:"2px 4px"}} title="Κάτω">▼</button>
+            </div>
+          )}
+          {isAdmin ? (
+            <input value={p.number||""} onChange={e=>setPlayerNumber(side,pi,e.target.value.slice(0,2))}
+              placeholder="#" maxLength={2}
+              style={{width:32,textAlign:"center",background:"#0d1220",border:`1px solid ${color}55`,borderRadius:5,color,fontWeight:800,fontSize:13,padding:"3px 0",outline:"none"}}/>
+          ) : (
+            p.number ? <span style={{minWidth:26,textAlign:"center",background:`${color}22`,color,fontWeight:800,fontSize:12,borderRadius:5,padding:"2px 6px"}}>{p.number}</span> : null
+          )}
+          <span>{p.name}</span>
+        </div>
+      </td>
       <td style={{...S.td,textAlign:"center",fontWeight:900,fontSize:16,color:"#f1f5f9"}}>{p.pts}</td>
       <td style={{...S.td,textAlign:"center",color:"#94a3b8"}}>{p.reb}</td>
       <td style={{...S.td,textAlign:"center",color:"#94a3b8"}}>{p.ast}</td>
+      <td style={{...S.td,textAlign:"center",color:(p.fouls||0)>=4?"#ef4444":"#94a3b8",fontWeight:(p.fouls||0)>=4?700:400}}>{p.fouls||0}</td>
+      <td style={{...S.td,textAlign:"center",fontWeight:700,color:"#fbbf24"}}>{eff}</td>
       {isAdmin&&(
         <td style={{...S.td,textAlign:"right"}}>
-          <div style={{display:"flex",gap:4,justifyContent:"flex-end"}}>
-            {[1,2,3].map(n=><button key={n} onClick={()=>addStat(side,pi,"pts",n)} style={{background:color,border:"none",borderRadius:6,color:"#fff",fontWeight:800,fontSize:14,padding:"4px 10px",cursor:"pointer"}}>+{n}</button>)}
-            <button onClick={()=>addStat(side,pi,"reb")} style={{...S.btnGhost,padding:"4px 8px",fontSize:12}}>RB</button>
-            <button onClick={()=>addStat(side,pi,"ast")} style={{...S.btnGhost,padding:"4px 8px",fontSize:12}}>AS</button>
-            <button onClick={()=>undo(side,pi)} style={{...S.btnGhost,padding:"4px 8px",fontSize:12,color:"#ef4444",borderColor:"#ef444433"}}>↩</button>
+          <div style={{display:"flex",gap:4,justifyContent:"flex-end",flexWrap:"wrap"}}>
+            {[1,2,3].map(n=><button key={n} onClick={()=>addStat(side,pi,"pts",n)} style={{background:color,border:"none",borderRadius:6,color:"#fff",fontWeight:800,fontSize:14,padding:"4px 9px",cursor:"pointer"}} title={n===3?"+3 (μετράει τρίποντο)":`+${n} πόντοι`}>+{n}</button>)}
+            <button onClick={()=>addStat(side,pi,"reb")} onDoubleClick={()=>minusStat(side,pi,"reb")} style={{...S.btnGhost,padding:"4px 8px",fontSize:12}} title="Κλικ +1 · Διπλό κλικ −1">RB</button>
+            <button onClick={()=>addStat(side,pi,"ast")} onDoubleClick={()=>minusStat(side,pi,"ast")} style={{...S.btnGhost,padding:"4px 8px",fontSize:12}} title="Κλικ +1 · Διπλό κλικ −1">AS</button>
+            <button onClick={()=>addPlayerFoul(side,pi)} onDoubleClick={()=>minusStat(side,pi,"fouls")} style={{...S.btnGhost,padding:"4px 8px",fontSize:12,color:"#f59e0b",borderColor:"#f59e0b33"}} title="Φάουλ · Κλικ +1 · Διπλό κλικ −1">FL</button>
+            <button onClick={()=>undoPts(side,pi)} style={{...S.btnGhost,padding:"4px 8px",fontSize:12,color:"#ef4444",borderColor:"#ef444433"}} title="Αναίρεση πόντου">↩</button>
           </div>
         </td>
       )}
     </tr>
-  );
+    );
+  };
 
   return (
     <div>
@@ -751,21 +867,43 @@ function CourtPanel({ courtNum, court, allTeams, state, setState, isAdmin }) {
               <TeamLogo teamId={court.teamA.teamId} size={40}/>
               <span style={{fontSize:14,color:"#f97316",fontWeight:700}}>{tA?.name}</span>
             </div>
-            <div style={{fontSize:88,fontWeight:900,color:"#f1f5f9",lineHeight:1}}>{court.teamA.score}</div>
+            <div className="big-score" style={{fontSize:88,fontWeight:900,color:"#f1f5f9",lineHeight:1}}>{court.teamA.score}</div>
             <div style={{fontSize:13,color:court.teamA.fouls>=5?"#ef4444":"#475569",marginTop:4}}>
-              Φάουλ: <b>{court.teamA.fouls}</b>
-              {isAdmin&&<button onClick={()=>addFoul("teamA")} style={{...S.btnGhost,marginLeft:8,padding:"2px 8px",fontSize:11,color:"#f97316",borderColor:"#f9731633"}}>+</button>}
+              Φάουλ ομάδας: <b>{court.teamA.fouls}</b>
+            </div>
+            <div style={{fontSize:12,color:"#475569",marginTop:4,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+              <span>Timeout:</span>
+              {[0,1].map(i=>(
+                <span key={i} style={{width:14,height:14,borderRadius:3,background:i<court.teamA.timeouts?"#f97316":"#1e2d45",display:"inline-block"}}/>
+              ))}
+              {isAdmin&&court.teamA.timeouts>0&&court.breakTime===0&&<button onClick={()=>timeout("teamA")} style={{...S.btnGhost,marginLeft:4,padding:"2px 10px",fontSize:11,color:"#f97316",borderColor:"#f9731633"}}>TO 45"</button>}
             </div>
           </div>
-          <div style={{textAlign:"center",minWidth:200}}>
-            <div style={{fontSize:64,fontWeight:900,fontVariantNumeric:"tabular-nums",color:urgent?"#ef4444":"#f1f5f9"}}>{fmt(court.timeLeft)}</div>
-            {isAdmin&&(
-              <div style={{display:"flex",gap:6,justifyContent:"center",marginTop:8,flexWrap:"wrap"}}>
-                <button onClick={toggle} style={{...(court.running?S.btnRed:S.btnGreen),padding:"7px 18px"}}>{court.running?"⏸ Παύση":"▶ Εκκίνηση"}</button>
-                <button onClick={resetPer} style={{...S.btnSecondary}}>↺</button>
-                <button onClick={nextPer} disabled={court.period>=4} style={{...S.btnSecondary,opacity:court.period>=4?0.4:1}}>▶|</button>
-                <button onClick={endGame} style={{...S.btnGhost,color:"#ef4444",borderColor:"#ef444433"}}>Τέλος</button>
+          <div style={{textAlign:"center",minWidth:220}}>
+            {court.breakTime>0 ? (
+              <div>
+                <div style={{fontSize:11,letterSpacing:2,color:"#fbbf24",fontWeight:700,marginBottom:2}}>{court.breakLabel||"ΔΙΑΛΕΙΜΜΑ"}</div>
+                <div style={{fontSize:56,fontWeight:900,fontVariantNumeric:"tabular-nums",color:"#fbbf24",textShadow:"0 0 24px #fbbf2444"}}>{fmt(court.breakTime)}</div>
+                {isAdmin&&(
+                  <div style={{display:"flex",gap:6,justifyContent:"center",marginTop:6}}>
+                    <button onClick={toggleBreak} style={{...(court.breakRunning?S.btnRed:S.btnGreen),padding:"6px 14px",fontSize:12}}>{court.breakRunning?"⏸":"▶"}</button>
+                    <button onClick={skipBreak} style={{...S.btnSecondary,fontSize:12}}>Παράλειψη ✕</button>
+                  </div>
+                )}
               </div>
+            ) : (
+              <>
+                <div className="big-timer" style={{fontSize:64,fontWeight:900,fontVariantNumeric:"tabular-nums",color:urgent?"#ef4444":"#f1f5f9"}}>{fmt(court.timeLeft)}</div>
+                {isAdmin&&(
+                  <div style={{display:"flex",gap:6,justifyContent:"center",marginTop:8,flexWrap:"wrap"}}>
+                    <button onClick={toggle} style={{...(court.running?S.btnRed:S.btnGreen),padding:"7px 18px"}} title="Spacebar">{court.running?"⏸ Παύση":"▶ Εκκίνηση"}</button>
+                    <button onClick={resetPer} style={{...S.btnSecondary}} title="Επαναφορά χρόνου">↺</button>
+                    <button onClick={nextPer} disabled={court.period>=4} style={{...S.btnSecondary,opacity:court.period>=4?0.4:1}} title="Επόμενη περίοδος">▶|</button>
+                    <button onClick={endGame} style={{...S.btnGhost,color:"#ef4444",borderColor:"#ef444433"}}>Τέλος</button>
+                  </div>
+                )}
+                {isAdmin && <div style={{fontSize:10,color:"#334155",marginTop:6}}>Spacebar = start/stop</div>}
+              </>
             )}
           </div>
           <div style={{textAlign:"center",flex:1}}>
@@ -773,17 +911,23 @@ function CourtPanel({ courtNum, court, allTeams, state, setState, isAdmin }) {
               <TeamLogo teamId={court.teamB.teamId} size={40}/>
               <span style={{fontSize:14,color:"#3b82f6",fontWeight:700}}>{tB?.name}</span>
             </div>
-            <div style={{fontSize:88,fontWeight:900,color:"#f1f5f9",lineHeight:1}}>{court.teamB.score}</div>
+            <div className="big-score" style={{fontSize:88,fontWeight:900,color:"#f1f5f9",lineHeight:1}}>{court.teamB.score}</div>
             <div style={{fontSize:13,color:court.teamB.fouls>=5?"#ef4444":"#475569",marginTop:4}}>
-              Φάουλ: <b>{court.teamB.fouls}</b>
-              {isAdmin&&<button onClick={()=>addFoul("teamB")} style={{...S.btnGhost,marginLeft:8,padding:"2px 8px",fontSize:11,color:"#3b82f6",borderColor:"#3b82f633"}}>+</button>}
+              Φάουλ ομάδας: <b>{court.teamB.fouls}</b>
+            </div>
+            <div style={{fontSize:12,color:"#475569",marginTop:4,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+              <span>Timeout:</span>
+              {[0,1].map(i=>(
+                <span key={i} style={{width:14,height:14,borderRadius:3,background:i<court.teamB.timeouts?"#3b82f6":"#1e2d45",display:"inline-block"}}/>
+              ))}
+              {isAdmin&&court.teamB.timeouts>0&&court.breakTime===0&&<button onClick={()=>timeout("teamB")} style={{...S.btnGhost,marginLeft:4,padding:"2px 10px",fontSize:11,color:"#3b82f6",borderColor:"#3b82f633"}}>TO 45"</button>}
             </div>
           </div>
         </div>
       </div>
 
       {/* Player tables */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+      <div className="stack-mobile" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
         {[{side:"teamA",color:"#f97316",label:`${tA?.name}`,data:court.teamA},
           {side:"teamB",color:"#3b82f6",label:`${tB?.name}`,data:court.teamB}].map(({side,color,label,data})=>(
           <div key={side} style={S.card}>
@@ -796,13 +940,13 @@ function CourtPanel({ courtNum, court, allTeams, state, setState, isAdmin }) {
             <table style={S.table}>
               <thead>
                 <tr style={{background:"#0d1220"}}>
-                  {["Παίκτης","ΠΤΣ","REB","AST",isAdmin?"Ενέργειες":""].filter(Boolean).map(h=>(
-                    <th key={h} style={{...S.th,textAlign:h==="Παίκτης"||h==="Ενέργειες"?"left":"center"}}>{h}</th>
+                  {["Παίκτης","ΠΤΣ","REB","AST","ΦΛ","EFF",isAdmin?"Ενέργειες":""].filter(Boolean).map(h=>(
+                    <th key={h} style={{...S.th,textAlign:h==="Παίκτης"||h==="Ενέργειες"?"left":"center", color:h==="EFF"?"#fbbf24":h==="ΦΛ"?"#f59e0b":"#475569"}}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {data.players.map((p,i)=><PlayerRow key={i} p={p} pi={i} side={side} color={color}/>)}
+                {data.players.map((p,i)=><PlayerRow key={i} p={p} pi={i} side={side} color={color} total={data.players.length}/>)}
               </tbody>
             </table>
           </div>
@@ -819,7 +963,7 @@ function StatsTab({ state }) {
   const allRows = Object.entries(state.playerStats).map(([key,s])=>{
     const [teamId]=key.split(":");
     const team=allTeams.find(t=>t.id===teamId);
-    const eff = s.pts + s.reb + s.ast - s.fouls;
+    const eff = s.pts + s.reb + s.ast - (s.fouls||0);
     return {...s, key, teamId, teamName:team?.name||"?", teamColor:team?.color||"#888", eff};
   });
 
@@ -832,26 +976,27 @@ function StatsTab({ state }) {
   );
 
   const categories = [
-    { key:"pts",   label:"🏀 Σκόρερ",       unit:"ΠΤΣ",  color:"#f97316" },
-    { key:"reb",   label:"💪 Ριμπάουντ",     unit:"REB",  color:"#3b82f6" },
-    { key:"ast",   label:"🎯 Ασίστ",          unit:"AST",  color:"#22c55e" },
-    { key:"fouls", label:"🚨 Φάουλ",          unit:"FL",   color:"#ef4444" },
-    { key:"eff",   label:"⚡ Οικονομία",      unit:"EFF",  color:"#fbbf24" },
+    { key:"pts",    label:"🏀 Σκόρερ",       unit:"ΠΤΣ",  color:"#f97316" },
+    { key:"reb",    label:"💪 Ριμπάουντ",     unit:"REB",  color:"#3b82f6" },
+    { key:"ast",    label:"🎯 Ασίστ",          unit:"AST",  color:"#22c55e" },
+    { key:"threes", label:"🎯 Τρίποντα",       unit:"3PT",  color:"#a855f7" },
+    { key:"fouls",  label:"🚨 Φάουλ",          unit:"FL",   color:"#ef4444" },
+    { key:"eff",    label:"⚡ Οικονομία",      unit:"EFF",  color:"#fbbf24" },
   ];
 
-  const top5 = (key) => [...allRows].sort((a,b)=>b[key]-a[key]).slice(0,5);
+  const top5 = (key) => [...allRows].filter(r=>(r[key]||0)>0).sort((a,b)=>(b[key]||0)-(a[key]||0)).slice(0,5);
 
   return (
     <div>
       <div style={{ fontSize:12, color:"#475569", marginBottom:20 }}>
-        Οικονομία (EFF) = PTS + REB + AST − Fouls
+        Οικονομία (EFF) = Πόντοι + Ριμπάουντ + Ασίστ − Ατομικά Φάουλ
       </div>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:18, marginBottom:18 }}>
+      <div className="stack-mobile-3" style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:18, marginBottom:18 }}>
         {categories.slice(0,3).map(cat => (
           <TopFiveCard key={cat.key} cat={cat} rows={top5(cat.key)} allTeams={allTeams}/>
         ))}
       </div>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(2, 1fr)", gap:18 }}>
+      <div className="stack-mobile-3" style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:18 }}>
         {categories.slice(3).map(cat => (
           <TopFiveCard key={cat.key} cat={cat} rows={top5(cat.key)} allTeams={allTeams}/>
         ))}
@@ -945,7 +1090,7 @@ function MVPTab({ state }) {
             <div style={{ fontSize:10, letterSpacing:5, color:"#f97316", fontWeight:700, marginBottom:6 }}>ΤΟΥΡΝΟΥΑ MVP</div>
             <div style={{ fontSize:34, fontWeight:900, color:"#fff", marginBottom:4 }}>{mvp.name}</div>
             <div style={{ fontSize:14, color:"#f97316", opacity:0.8, marginBottom:12 }}>{mvp.teamName}</div>
-            <div style={{ fontSize:12, color:"#475569" }}>EFF = PTS + REB + AST − Fouls</div>
+            <div style={{ fontSize:12, color:"#475569" }}>EFF = Πόντοι + Ριμπάουντ + Ασίστ − Ατομικά Φάουλ</div>
           </div>
           <div style={{ display:"flex", gap:28 }}>
             {[{v:mvp.effPG,l:"EFF/G",c:"#fbbf24"},{v:mvp.ppg,l:"PPG",c:"#f97316"},{v:mvp.rpg,l:"RPG",c:"#3b82f6"},{v:mvp.apg,l:"APG",c:"#22c55e"}].map(({v,l,c})=>(
@@ -967,7 +1112,7 @@ function MVPTab({ state }) {
       {mvpHistory.length > 0 && (
         <div style={{ marginBottom:24 }}>
           <div style={{ fontSize:13, fontWeight:800, color:"#f1f5f9", marginBottom:12, letterSpacing:1 }}>MVP ΑΝΑ ΑΓΩΝΙΣΤΙΚΗ</div>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(5, 1fr)", gap:10 }}>
+          <div className="court-overview" style={{ display:"grid", gridTemplateColumns:"repeat(5, 1fr)", gap:10 }}>
             {mvpHistory.map((m,i)=>{
               const team = allTeams.find(t=>t.id===m.teamId);
               return (
@@ -1083,7 +1228,7 @@ function TeamsTab({ state }) {
   const pa = teamMatches.filter(m=>m.done).reduce((s,m)=>s+(m.home===selectedTeam?parseInt(m.as):parseInt(m.hs)),0);
 
   return (
-    <div style={{ display:"grid", gridTemplateColumns:"240px 1fr", gap:20 }}>
+    <div className="teams-layout" style={{ display:"grid", gridTemplateColumns:"240px 1fr", gap:20 }}>
       {/* Team list sidebar */}
       <div>
         <div style={{ fontSize:11, color:"#475569", fontWeight:700, letterSpacing:2, marginBottom:10 }}>ΟΜΑΔΕΣ</div>
@@ -1316,30 +1461,41 @@ function DisplayTab({ state }) {
 
           {/* Center — Timer */}
           <div style={{ textAlign:"center", minWidth:isFullscreen?320:260, flexShrink:0 }}>
-            <div style={{
-              fontSize:isFullscreen?120:88, fontWeight:900,
-              color: urgent ? "#ef4444" : "#f1f5f9",
-              fontVariantNumeric:"tabular-nums",
-              textShadow: urgent ? "0 0 60px #ef444499" : "none",
-              transition:"color 0.3s, text-shadow 0.3s",
-              lineHeight:1,
-            }}>{fmt(court.timeLeft)}</div>
+            {court.breakTime>0 ? (
+              <div>
+                <div style={{ fontSize:isFullscreen?22:16, letterSpacing:3, color:"#fbbf24", fontWeight:800, marginBottom:6 }}>{court.breakLabel||"ΔΙΑΛΕΙΜΜΑ"}</div>
+                <div style={{
+                  fontSize:isFullscreen?120:88, fontWeight:900, color:"#fbbf24",
+                  fontVariantNumeric:"tabular-nums", textShadow:"0 0 60px #fbbf2466", lineHeight:1,
+                }}>{fmt(court.breakTime)}</div>
+                <div style={{ marginTop:12, fontSize:isFullscreen?16:13, color:"#475569", fontWeight:700 }}>ΕΠΟΜΕΝΗ: ΠΕΡΙΟΔΟΣ {court.period}</div>
+              </div>
+            ) : (
+              <>
+                <div style={{
+                  fontSize:isFullscreen?120:88, fontWeight:900,
+                  color: urgent ? "#ef4444" : "#f1f5f9",
+                  fontVariantNumeric:"tabular-nums",
+                  textShadow: urgent ? "0 0 60px #ef444499" : "none",
+                  transition:"color 0.3s, text-shadow 0.3s",
+                  lineHeight:1,
+                }}>{fmt(court.timeLeft)}</div>
 
-            {/* Status indicator */}
-            <div style={{ marginTop:12, display:"flex", justifyContent:"center", alignItems:"center", gap:8 }}>
-              <div style={{
-                width:12,height:12,borderRadius:"50%",
-                background: court.running?"#22c55e":"#475569",
-                boxShadow: court.running?"0 0 16px #22c55e":"none",
-                transition:"all 0.3s",
-              }}/>
-              <span style={{ fontSize:isFullscreen?16:13, color:"#475569", fontWeight:700 }}>
-                {court.gameOver?"ΤΕΛΟΣ":court.running?"ΣΕ ΕΞΕΛΙΞΗ":"ΠΑΥΣΗ"}
-              </span>
-            </div>
+                <div style={{ marginTop:12, display:"flex", justifyContent:"center", alignItems:"center", gap:8 }}>
+                  <div style={{
+                    width:12,height:12,borderRadius:"50%",
+                    background: court.running?"#22c55e":"#475569",
+                    boxShadow: court.running?"0 0 16px #22c55e":"none",
+                    transition:"all 0.3s",
+                  }}/>
+                  <span style={{ fontSize:isFullscreen?16:13, color:"#475569", fontWeight:700 }}>
+                    {court.gameOver?"ΤΕΛΟΣ":court.running?"ΣΕ ΕΞΕΛΙΞΗ":"ΠΑΥΣΗ"}
+                  </span>
+                </div>
 
-            {/* VS divider */}
-            <div style={{ marginTop:20, fontSize:isFullscreen?28:22, fontWeight:900, color:"#334155" }}>VS</div>
+                <div style={{ marginTop:20, fontSize:isFullscreen?28:22, fontWeight:900, color:"#334155" }}>VS</div>
+              </>
+            )}
           </div>
 
           {/* Team B */}
@@ -1369,7 +1525,7 @@ function DisplayTab({ state }) {
             {[...court.teamA.players.map(p=>({...p,color:"#f97316"})),
               ...court.teamB.players.map(p=>({...p,color:"#3b82f6"}))].map((p,i)=>(
               <div key={i} style={{ textAlign:"center", minWidth:80 }}>
-                <div style={{ fontSize:isFullscreen?14:12, color:p.color, fontWeight:700, marginBottom:3 }}>{p.name.split(" ")[0]}</div>
+                <div style={{ fontSize:isFullscreen?14:12, color:p.color, fontWeight:700, marginBottom:3 }}>{p.number?`#${p.number} `:""}{p.name.split(" ")[0]}</div>
                 <div style={{ display:"flex", gap:8, justifyContent:"center" }}>
                   <span style={{ fontSize:isFullscreen?18:14, fontWeight:900, color:"#f1f5f9" }}>{p.pts}</span>
                   <span style={{ fontSize:isFullscreen?12:10, color:"#475569", alignSelf:"flex-end", paddingBottom:2 }}>ΠΤΣ</span>
@@ -1453,7 +1609,7 @@ export default function App() {
     saveRef.current=setTimeout(()=>save(state),600);
   },[state.version]);
 
-  const TAB_TITLES = { standings:"Βαθμολογία Ομίλων", bracket:"Playoff Bracket", live:"Live Game", mvp:"MVP — Στατιστικά Παικτών", teams:"Ομάδες", stats:"Στατιστικά (Σύνολο)" };
+  const TAB_TITLES = { standings:"Βαθμολογία Ομίλων", bracket:"Playoff Bracket", live:"Live Game", mvp:"MVP — Στατιστικά Παικτών", teams:"Ομάδες", stats:"Στατιστικά (Σύνολο)" , display:"Display / TV Scoreboard" };
 
   return (
     <div style={S.shell}>
@@ -1463,16 +1619,76 @@ export default function App() {
         input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
         input[type=number] { -moz-appearance: textfield; }
         select option { background: #0d1220; }
-        ::-webkit-scrollbar { width:6px; }
+        ::-webkit-scrollbar { width:6px; height:6px; }
         ::-webkit-scrollbar-track { background:#080c14; }
         ::-webkit-scrollbar-thumb { background:#1e2d45; border-radius:3px; }
+
+        .mobile-only { display: none; }
+
+        /* ═══ MOBILE (≤768px) ═══ */
+        @media (max-width: 768px) {
+          .desktop-sidebar { display: none !important; }
+          .main-area { margin-left: 0 !important; padding-bottom: 70px !important; }
+          .topbar { padding: 0 14px !important; height: 50px !important; }
+          .topbar h1 { font-size: 14px !important; }
+          .content-area { padding: 14px !important; }
+          .mobile-only { display: flex !important; }
+
+          /* Stack 2-column grids vertically */
+          .stack-mobile { grid-template-columns: 1fr !important; }
+          .stack-mobile-3 { grid-template-columns: 1fr !important; }
+
+          /* Tables scroll horizontally inside cards */
+          .scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+          .scroll-x table { min-width: 480px; }
+          table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap; }
+          thead, tbody { display: table; width: 100%; min-width: 460px; }
+
+          /* Smaller scoreboard numbers on mobile */
+          .big-score { font-size: 64px !important; }
+          .big-timer { font-size: 46px !important; }
+
+          /* Live court overview cards stack */
+          .court-overview { grid-template-columns: 1fr !important; }
+
+          /* Bottom nav */
+          .bottom-nav { display: flex !important; }
+
+          /* Hide admin login text, just icon */
+          .admin-btn-text { display: none; }
+
+          /* Teams tab: stack sidebar above content */
+          .teams-layout { grid-template-columns: 1fr !important; }
+          .teams-list-mobile { display: flex !important; flex-wrap: wrap; gap: 6px; }
+        }
+
+        /* ═══ SMALL PHONES (≤420px) ═══ */
+        @media (max-width: 420px) {
+          .big-score { font-size: 52px !important; }
+          .big-timer { font-size: 38px !important; }
+          .content-area { padding: 10px !important; }
+        }
+
+        /* Bottom navigation (mobile only) */
+        .bottom-nav {
+          display: none;
+          position: fixed; bottom: 0; left: 0; right: 0;
+          background: #0d1220; border-top: 1px solid #1e2d45;
+          z-index: 50; padding: 6px 4px;
+          justify-content: space-around;
+        }
+        .bottom-nav button {
+          background: none; border: none; cursor: pointer;
+          display: flex; flex-direction: column; align-items: center;
+          gap: 2px; padding: 4px 6px; flex: 1; min-width: 0;
+        }
       `}</style>
 
       <Sidebar tab={tab} setTab={setTab} isAdmin={isAdmin} liveActive={state.courts[1].active||state.courts[2].active} liveCount={[state.courts[1],state.courts[2]].filter(c=>c.active).length}/>
 
-      <div style={S.main}>
+      <div className="main-area" style={S.main}>
         {/* Top bar */}
-        <div style={S.topbar}>
+        <div className="topbar" style={S.topbar}>
           <div style={{ display:"flex", alignItems:"center", gap:12 }}>
             <h1 style={{ margin:0, fontSize:16, fontWeight:700, color:"#f1f5f9" }}>{TAB_TITLES[tab]}</h1>
           </div>
@@ -1496,13 +1712,13 @@ export default function App() {
             {isAdmin ? (
               <button onClick={()=>setIsAdmin(false)} style={{ ...S.btnGhost, color:"#f97316", borderColor:"#f9731633" }}>🔓 Admin</button>
             ) : (
-              <button onClick={()=>setShowPin(true)} style={S.btnSecondary}>🔒 Σύνδεση Admin</button>
+              <button onClick={()=>setShowPin(true)} style={S.btnSecondary}>🔒 <span className="admin-btn-text">Σύνδεση Admin</span></button>
             )}
           </div>
         </div>
 
         {/* Page content */}
-        <div style={S.content}>
+        <div className="content-area" style={S.content}>
           {tab==="standings" && <StandingsTab state={state} setState={setState} isAdmin={isAdmin}/>}
           {tab==="bracket"  && <BracketTab  state={state} setState={setState} isAdmin={isAdmin}/>}
           {tab==="live"     && <LiveTab     state={state} setState={setState} isAdmin={isAdmin}/>}
@@ -1511,6 +1727,16 @@ export default function App() {
           {tab==="stats"    && <StatsTab    state={state}/>}
           {tab==="display"  && <DisplayTab  state={state}/>}
         </div>
+      </div>
+
+      {/* Mobile bottom navigation */}
+      <div className="bottom-nav">
+        {NAV_ITEMS.map(item=>(
+          <button key={item.key} onClick={()=>setTab(item.key)}>
+            <span style={{ fontSize:18, opacity: tab===item.key?1:0.5 }}>{item.icon}</span>
+            <span style={{ fontSize:9, fontWeight:700, color: tab===item.key?"#f97316":"#64748b", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", maxWidth:54 }}>{item.label.split(" ")[0]}</span>
+          </button>
+        ))}
       </div>
 
       {/* PIN Modal */}
