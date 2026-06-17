@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { initializeApp } from "firebase/app";
-import { getFirestore, doc, onSnapshot, setDoc } from "firebase/firestore";
+import { getFirestore, doc, onSnapshot, setDoc, updateDoc } from "firebase/firestore";
 
 // ─── FIREBASE CONFIG ──────────────────────────────────────────────────────────
 const firebaseConfig = {
@@ -108,16 +108,49 @@ function TeamLogo({ teamId, size = 32, style = {} }) {
   );
 }
 
+// Save ONE court's state to its own field (so two laptops don't clobber each other)
+async function saveCourt(courtNum, courtState, version) {
+  try {
+    const frozen = {...courtState, running:false};
+    await updateDoc(DOC_REF, {
+      [`court${courtNum}`]: JSON.stringify(frozen),
+      [`court${courtNum}_v`]: version,
+    });
+  } catch(e){
+    // If doc doesn't exist yet, create it
+    try {
+      await setDoc(DOC_REF, {
+        [`court${courtNum}`]: JSON.stringify({...courtState, running:false}),
+        [`court${courtNum}_v`]: version,
+      }, { merge:true });
+    } catch(e2){ console.error("saveCourt failed:", e2); }
+  }
+}
+
+// Save shared (non-court) data to its own field
+async function saveShared(sharedState, version) {
+  try {
+    await updateDoc(DOC_REF, {
+      shared: JSON.stringify(sharedState),
+      shared_v: version,
+    });
+  } catch(e){
+    try {
+      await setDoc(DOC_REF, {
+        shared: JSON.stringify(sharedState),
+        shared_v: version,
+      }, { merge:true });
+    } catch(e2){ console.error("saveShared failed:", e2); }
+  }
+}
+
+// Legacy single-blob save (used once for initial seed / migration)
 async function save(s) {
   try {
-    const frozen = { ...s, courts: {
-      1: {...s.courts[1], running:false},
-      2: {...s.courts[2], running:false},
-    }};
-    await setDoc(DOC_REF, { data: JSON.stringify(frozen) });
+    const frozen = { ...s, courts: { 1:{...s.courts[1],running:false}, 2:{...s.courts[2],running:false} }};
+    await setDoc(DOC_REF, { data: JSON.stringify(frozen) }, { merge:true });
   } catch(e){ console.error("Save failed:", e); }
 }
-// Firestore uses a real-time listener instead of polling — see App useEffect.
 
 const fmt = s => `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
 
@@ -547,6 +580,12 @@ function LiveTab({ state, setState, isAdmin }) {
 
   // Admin picks which court to manage
   const [adminCourt, setAdminCourt] = useState(1);
+
+  // Tell the sync layer which court THIS browser controls (only when admin)
+  useEffect(()=>{
+    if(isAdmin && window.__setMyCourt) window.__setMyCourt(adminCourt);
+    return ()=>{ if(window.__setMyCourt) window.__setMyCourt(null); };
+  },[isAdmin, adminCourt]);
 
   return (
     <div>
@@ -1731,35 +1770,111 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [pinInput, setPinInput] = useState("");
   const [showPin, setShowPin] = useState(false);
-  const saveRef = useRef(null);
-  const localVersion = useRef(0);
   const [connected, setConnected] = useState(false);
+  // Track which versions we've already applied/written, per field
+  const vCourt1 = useRef(0);
+  const vCourt2 = useRef(0);
+  const vShared = useRef(0);
+  // Which courts THIS browser is actively controlling (so we don't overwrite our own live edits)
+  const myCourt = useRef(null);
+  const saveTimers = useRef({});
+  const didSeed = useRef(false);
 
-  // Real-time Firestore listener — syncs across all devices instantly
+  // Real-time Firestore listener — merges per-field so two laptops don't clobber each other
   useEffect(()=>{
     const unsub = onSnapshot(DOC_REF, (snap)=>{
       setConnected(true);
-      if(snap.exists() && snap.data().data){
+      if(!snap.exists()) return;
+      const d = snap.data();
+
+      // One-time migration: if only the legacy "data" blob exists, seed the split fields
+      if(d.data && !d.shared && !didSeed.current){
+        didSeed.current = true;
         try {
-          const remote = JSON.parse(snap.data().data);
-          if(remote.version > localVersion.current){
-            localVersion.current = remote.version;
-            setState(remote);
-          }
-        } catch(e){ console.error("Parse failed:", e); }
+          const blob = JSON.parse(d.data);
+          setState(blob);
+          // Push split fields so future writes are isolated
+          const {courts, ...shared} = blob;
+          saveCourt(1, blob.courts[1], Date.now());
+          saveCourt(2, blob.courts[2], Date.now());
+          saveShared(shared, Date.now());
+        } catch(e){ console.error("Seed parse failed:", e); }
+        return;
       }
+
+      setState(prev=>{
+        let nextState = prev;
+        let changed = false;
+
+        // Court 1 — apply remote unless WE are controlling court 1
+        if(d.court1_v && d.court1_v > vCourt1.current && myCourt.current !== 1){
+          try {
+            const c1 = JSON.parse(d.court1);
+            vCourt1.current = d.court1_v;
+            nextState = {...nextState, courts:{...nextState.courts, 1:c1}};
+            changed = true;
+          } catch(e){}
+        }
+        // Court 2 — apply remote unless WE are controlling court 2
+        if(d.court2_v && d.court2_v > vCourt2.current && myCourt.current !== 2){
+          try {
+            const c2 = JSON.parse(d.court2);
+            vCourt2.current = d.court2_v;
+            nextState = {...nextState, courts:{...nextState.courts, 2:c2}};
+            changed = true;
+          } catch(e){}
+        }
+        // Shared data (standings, stats, bracket, mvp, teams)
+        if(d.shared_v && d.shared_v > vShared.current){
+          try {
+            const sh = JSON.parse(d.shared);
+            vShared.current = d.shared_v;
+            nextState = {...nextState, ...sh};
+            changed = true;
+          } catch(e){}
+        }
+        return changed ? nextState : prev;
+      });
     }, (err)=>{ console.error("Firestore error:", err); setConnected(false); });
     return ()=>unsub();
   },[]);
 
-  // Save to Firestore when admin makes changes (debounced)
+  // Mark which court this browser controls (the admin's selected court)
+  // Updated from the Live tab via a window-level ref set in LiveTab.
+  useEffect(()=>{
+    window.__setMyCourt = (n)=>{ myCourt.current = n; };
+    return ()=>{ delete window.__setMyCourt; };
+  },[]);
+
+  // Save COURT changes — ONLY the court this browser controls (myCourt).
+  // This is the key fix: each laptop writes only its own court field,
+  // so the two clocks never overwrite each other.
   useEffect(()=>{
     if(!isAdmin) return;
-    if(state.version <= localVersion.current) return;
-    localVersion.current = state.version;
-    clearTimeout(saveRef.current);
-    saveRef.current=setTimeout(()=>save(state),600);
-  },[state.version]);
+    const n = myCourt.current;
+    if(n!==1 && n!==2) return; // not controlling any court right now
+    const cv = n===1 ? vCourt1 : vCourt2;
+    const snapStr = JSON.stringify({...state.courts[n], running:false});
+    if(saveTimers.current[`c${n}_last`] === snapStr) return; // no change
+    saveTimers.current[`c${n}_last`] = snapStr;
+    const newVer = Date.now();
+    cv.current = newVer;
+    clearTimeout(saveTimers.current[`c${n}`]);
+    saveTimers.current[`c${n}`] = setTimeout(()=>saveCourt(n, state.courts[n], newVer), 400);
+  },[state.courts, isAdmin]);
+
+  // Save SHARED changes (standings, stats, bracket, mvp, teams)
+  useEffect(()=>{
+    if(!isAdmin) return;
+    const {courts, ...shared} = state;
+    const snapStr = JSON.stringify(shared);
+    if(saveTimers.current.shared_last === snapStr) return;
+    saveTimers.current.shared_last = snapStr;
+    const newVer = Date.now();
+    vShared.current = newVer;
+    clearTimeout(saveTimers.current.shared);
+    saveTimers.current.shared = setTimeout(()=>saveShared(shared, newVer), 500);
+  },[state.teams, state.matchesA, state.matchesB, state.playoffs, state.playerStats, state.mvpHistory]);
 
   const TAB_TITLES = { standings:"Βαθμολογία Ομίλων", bracket:"Playoff Bracket", live:"Live Game", mvp:"MVP — Στατιστικά Παικτών", teams:"Ομάδες", stats:"Στατιστικά (Σύνολο)" , display:"Display / TV Scoreboard" };
 
