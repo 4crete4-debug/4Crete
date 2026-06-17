@@ -181,7 +181,7 @@ function Sidebar({ tab, setTab, isAdmin, liveActive, liveCount }) {
       <div style={{ padding:"20px 20px 18px", borderBottom:"1px solid #1e2d45", textAlign:"center" }}>
         <img src={LEAGUE_LOGO} alt="4Crete" style={{ width:110, height:"auto", margin:"0 auto 8px", display:"block", filter:"drop-shadow(0 0 12px #f9731633)" }}/>
         <div style={{ fontSize:15, fontWeight:900, color:"#f1f5f9", lineHeight:1.1, letterSpacing:1 }}>SUMMER LEAGUE</div>
-        <div style={{ fontSize:10, color:"#334155", marginTop:4, letterSpacing:1 }}>2025 · ΗΡΑΚΛΕΙΟ</div>
+        <div style={{ fontSize:10, color:"#334155", marginTop:4, letterSpacing:1 }}>2026 · ΗΡΑΚΛΕΙΟ</div>
       </div>
 
       {/* Nav */}
@@ -876,7 +876,7 @@ function CourtPanel({ courtNum, court: rawCourt, allTeams, state, setState, isAd
       <td style={{...S.td,textAlign:"center",color:"#94a3b8"}}>{p.reb}</td>
       <td style={{...S.td,textAlign:"center",color:"#94a3b8"}}>{p.ast}</td>
       <td style={{...S.td,textAlign:"center",color:(p.fouls||0)>=4?"#ef4444":"#94a3b8",fontWeight:(p.fouls||0)>=4?700:400}}>{p.fouls||0}</td>
-      <td style={{...S.td,textAlign:"center",fontWeight:700,color:"#fbbf24"}}>{eff}</td>
+      {!isAdmin&&<td style={{...S.td,textAlign:"center",fontWeight:700,color:"#fbbf24"}}>{eff}</td>}
       {isAdmin&&(
         <td style={{...S.td,textAlign:"right"}}>
           <div style={{display:"flex",gap:4,justifyContent:"flex-end",flexWrap:"wrap"}}>
@@ -990,7 +990,7 @@ function CourtPanel({ courtNum, court: rawCourt, allTeams, state, setState, isAd
             <table style={S.table}>
               <thead>
                 <tr style={{background:"#0d1220"}}>
-                  {["Παίκτης","ΠΤΣ","REB","AST","ΦΛ","EFF",isAdmin?"Ενέργειες":""].filter(Boolean).map(h=>(
+                  {["Παίκτης","ΠΤΣ","REB","AST","ΦΛ",isAdmin?"":"EFF",isAdmin?"Ενέργειες":""].filter(Boolean).map(h=>(
                     <th key={h} style={{...S.th,textAlign:h==="Παίκτης"||h==="Ενέργειες"?"left":"center", color:h==="EFF"?"#fbbf24":h==="ΦΛ"?"#f59e0b":"#475569"}}>{h}</th>
                   ))}
                 </tr>
@@ -1236,7 +1236,17 @@ function MVPTab({ state }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // TAB: TEAMS
 // ══════════════════════════════════════════════════════════════════════════════
-function TeamsTab({ state }) {
+function TeamsTab({ state, setState, isAdmin }) {
+  // Admin: directly adjust a player's accumulated stat (for corrections on completed games)
+  function adjustStat(playerKey, field, delta){
+    setState(prev=>{
+      const ps={...prev.playerStats};
+      if(!ps[playerKey]) ps[playerKey]={pts:0,reb:0,ast:0,fouls:0,threes:0,games:0,name:""};
+      const cur=ps[playerKey][field]||0;
+      ps[playerKey]={...ps[playerKey],[field]:Math.max(0,cur+delta)};
+      return {...prev,playerStats:ps,version:Date.now()};
+    });
+  }
   const allTeams = [...state.teams.A, ...state.teams.B];
   const [selectedTeam, setSelectedTeam] = useState(allTeams[0]?.id || "");
 
@@ -1266,8 +1276,9 @@ function TeamsTab({ state }) {
   // Get player stats for this team
   const playerStats = team.players.map((name, i) => {
     const key = `${team.id}:${i}`;
-    const s = state.playerStats[key] || {pts:0,reb:0,ast:0,fouls:0,games:0};
-    return { name, ...s, key, ppg: s.games ? (s.pts/s.games).toFixed(1) : "—", rpg: s.games ? (s.reb/s.games).toFixed(1) : "—", apg: s.games ? (s.ast/s.games).toFixed(1) : "—" };
+    const s = state.playerStats[key] || {pts:0,reb:0,ast:0,fouls:0,threes:0,games:0};
+    const eff = (s.pts||0)+(s.reb||0)+(s.ast||0)-(s.fouls||0);
+    return { name, ...s, key, eff, ppg: s.games ? (s.pts/s.games).toFixed(1) : "—", rpg: s.games ? (s.reb/s.games).toFixed(1) : "—", apg: s.games ? (s.ast/s.games).toFixed(1) : "—" };
   }).sort((a,b)=>b.pts-a.pts);
 
   // Team games
@@ -1339,6 +1350,8 @@ function TeamsTab({ state }) {
                 <th style={{ ...S.th, textAlign:"center" }}>RPG</th>
                 <th style={{ ...S.th, textAlign:"center" }}>APG</th>
                 <th style={{ ...S.th, textAlign:"center" }}>FL</th>
+                <th style={{ ...S.th, textAlign:"center", color:"#fbbf24" }}>EFF</th>
+                {isAdmin && <th style={{ ...S.th, textAlign:"center" }}>Διόρθωση</th>}
               </tr>
             </thead>
             <tbody>
@@ -1358,6 +1371,20 @@ function TeamsTab({ state }) {
                   <td style={{ ...S.td, textAlign:"center", color:"#94a3b8" }}>{p.rpg}</td>
                   <td style={{ ...S.td, textAlign:"center", color:"#94a3b8" }}>{p.apg}</td>
                   <td style={{ ...S.td, textAlign:"center", color:p.fouls>=5?"#ef4444":"#64748b" }}>{p.fouls}</td>
+                  <td style={{ ...S.td, textAlign:"center", fontWeight:700, color:"#fbbf24" }}>{p.eff}</td>
+                  {isAdmin && (
+                    <td style={{ ...S.td, textAlign:"center" }}>
+                      <div style={{ display:"flex", gap:3, justifyContent:"center", flexWrap:"wrap" }}>
+                        {[["pts","ΠΤ"],["reb","RB"],["ast","AS"],["fouls","ΦΛ"],["threes","3Π"]].map(([f,lbl])=>(
+                          <span key={f} style={{ display:"inline-flex", borderRadius:5, overflow:"hidden", border:"1px solid #2d3f5a" }}>
+                            <button onClick={()=>adjustStat(p.key, f, -1)} style={{ background:"#0d1220", border:"none", color:"#ef4444", fontSize:11, fontWeight:700, padding:"2px 5px", cursor:"pointer" }}>−</button>
+                            <span style={{ fontSize:10, color:"#64748b", padding:"2px 4px", background:"#111827", alignSelf:"center" }}>{lbl}</span>
+                            <button onClick={()=>adjustStat(p.key, f, 1)} style={{ background:"#1e2d45", border:"none", color:"#22c55e", fontSize:11, fontWeight:700, padding:"2px 5px", cursor:"pointer" }}>+</button>
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -1773,7 +1800,7 @@ export default function App() {
           {tab==="bracket"  && <BracketTab  state={state} setState={setState} isAdmin={isAdmin}/>}
           {tab==="live"     && <LiveTab     state={state} setState={setState} isAdmin={isAdmin}/>}
           {tab==="mvp"      && <MVPTab      state={state}/>}
-          {tab==="teams"    && <TeamsTab    state={state}/>}
+          {tab==="teams"    && <TeamsTab    state={state} setState={setState} isAdmin={isAdmin}/>}
           {tab==="stats"    && <StatsTab    state={state}/>}
           {tab==="display"  && <DisplayTab  state={state}/>}
         </div>
