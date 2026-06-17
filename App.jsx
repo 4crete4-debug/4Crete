@@ -121,6 +121,34 @@ async function save(s) {
 
 const fmt = s => `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
 
+// Buzzer/horn sound via Web Audio API (no external file needed)
+let _audioCtx = null;
+function playHorn(){
+  try {
+    if(!_audioCtx) _audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    const ctx = _audioCtx;
+    if(ctx.state==="suspended") ctx.resume();
+    const now = ctx.currentTime;
+    // Two-tone buzzer like a real game horn
+    [0, 0.0].forEach(()=>{});
+    const makeTone = (start, dur, freq) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sawtooth";
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.35, start+0.02);
+      gain.gain.setValueAtTime(0.35, start+dur-0.05);
+      gain.gain.linearRampToValueAtTime(0, start+dur);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(start); osc.stop(start+dur);
+    };
+    // Long single blast
+    makeTone(now, 1.4, 220);
+    makeTone(now, 1.4, 277);
+  } catch(e){ /* audio not available */ }
+}
+
 function standings(teamList, matches) {
   const st = {};
   teamList.forEach(t=>st[t.id]={id:t.id,name:t.name,color:t.color,W:0,L:0,PF:0,PA:0,pts:0});
@@ -615,6 +643,7 @@ function CourtPanel({ courtNum, court: rawCourt, allTeams, state, setState, isAd
           if(!c.running||c.gameOver) return prev;
           const next=c.timeLeft-1;
           if(next<=0){
+            playHorn();
             if(c.period>=4) return {...prev,courts:{...prev.courts,[courtNum]:{...c,timeLeft:0,running:false,gameOver:true}},version:Date.now()};
             // Period ends -> auto-start break: 1min after P1 & P3, 3min after P2 (halftime)
             const breakSecs = c.period===2 ? 180 : 60;
@@ -636,7 +665,7 @@ function CourtPanel({ courtNum, court: rawCourt, allTeams, state, setState, isAd
           const c={...prev.courts[courtNum]};
           if(!c.breakRunning) return prev;
           const next=c.breakTime-1;
-          if(next<=0) return {...prev,courts:{...prev.courts,[courtNum]:{...c,breakTime:0,breakRunning:false,breakLabel:""}},version:Date.now()};
+          if(next<=0){ playHorn(); return {...prev,courts:{...prev.courts,[courtNum]:{...c,breakTime:0,breakRunning:false,breakLabel:""}},version:Date.now()}; }
           return {...prev,courts:{...prev.courts,[courtNum]:{...c,breakTime:next}},version:Date.now()};
         });
       },1000);
@@ -802,6 +831,10 @@ function CourtPanel({ courtNum, court: rawCourt, allTeams, state, setState, isAd
   }
   function skipBreak(){ updateCourt(c=>({...c,breakTime:0,breakRunning:false,breakLabel:""})); }
   function toggleBreak(){ updateCourt(c=>({...c,breakRunning:!c.breakRunning})); }
+  // Extension / overtime — 5 minute timer, pauses the game
+  function startExtension(){
+    updateCourt(c=>({...c, running:false, breakTime:300, breakRunning:true, breakLabel:"ΠΑΡΑΤΑΣΗ"}));
+  }
 
   // ── Setup screen ─────────────────────────────────────────────────────────────
   if(!court.active){
@@ -948,6 +981,7 @@ function CourtPanel({ courtNum, court: rawCourt, allTeams, state, setState, isAd
                     <button onClick={toggle} style={{...(court.running?S.btnRed:S.btnGreen),padding:"7px 18px"}} title="Spacebar">{court.running?"⏸ Παύση":"▶ Εκκίνηση"}</button>
                     <button onClick={resetPer} style={{...S.btnSecondary}} title="Επαναφορά χρόνου">↺</button>
                     <button onClick={nextPer} disabled={court.period>=4} style={{...S.btnSecondary,opacity:court.period>=4?0.4:1}} title="Επόμενη περίοδος">▶|</button>
+                    <button onClick={startExtension} style={{...S.btnSecondary,color:"#a855f7",borderColor:"#a855f733"}} title="Παράταση 5 λεπτών">⏱ Παράταση</button>
                     <button onClick={endGame} style={{...S.btnGreen,padding:"7px 16px"}}>✓ Τέλος</button>
                     <button onClick={cancelGame} style={{...S.btnGhost,color:"#ef4444",borderColor:"#ef444433"}} title="Ακύρωση — δεν καταγράφεται τίποτα">✕ Ακύρωση</button>
                   </div>
@@ -1389,6 +1423,7 @@ function TeamsTab({ state, setState, isAdmin }) {
                 <th style={{ ...S.th, textAlign:"center" }}>RPG</th>
                 <th style={{ ...S.th, textAlign:"center" }}>APG</th>
                 <th style={{ ...S.th, textAlign:"center" }}>FL</th>
+                <th style={{ ...S.th, textAlign:"center", color:"#a855f7" }}>3PT</th>
                 <th style={{ ...S.th, textAlign:"center", color:"#fbbf24" }}>EFF</th>
                 {isAdmin && <th style={{ ...S.th, textAlign:"center" }}>Διόρθωση</th>}
               </tr>
@@ -1410,6 +1445,7 @@ function TeamsTab({ state, setState, isAdmin }) {
                   <td style={{ ...S.td, textAlign:"center", color:"#94a3b8" }}>{p.rpg}</td>
                   <td style={{ ...S.td, textAlign:"center", color:"#94a3b8" }}>{p.apg}</td>
                   <td style={{ ...S.td, textAlign:"center", color:p.fouls>=5?"#ef4444":"#64748b" }}>{p.fouls}</td>
+                  <td style={{ ...S.td, textAlign:"center", color:"#a855f7", fontWeight:600 }}>{p.threes||0}</td>
                   <td style={{ ...S.td, textAlign:"center", fontWeight:700, color:"#fbbf24" }}>{p.eff}</td>
                   {isAdmin && (
                     <td style={{ ...S.td, textAlign:"center" }}>
