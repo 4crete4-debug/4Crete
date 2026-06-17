@@ -1095,7 +1095,7 @@ function TopFiveCard({ cat, rows, allTeams }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // TAB: MVP
 // ══════════════════════════════════════════════════════════════════════════════
-function MVPTab({ state }) {
+function MVPTab({ state, setState, isAdmin }) {
   const allTeams = [...state.teams.A, ...state.teams.B];
 
   // Build per-game stats from playerStats
@@ -1124,6 +1124,29 @@ function MVPTab({ state }) {
 
   // Group by matchday MVP from mvpHistory in state
   const mvpHistory = state.mvpHistory || [];
+
+  // Admin: change the MVP of a matchday to a different player
+  function changeMvp(idx, playerKey){
+    setState(prev=>{
+      const hist=[...(prev.mvpHistory||[])];
+      if(!hist[idx]) return prev;
+      const [teamId]=playerKey.split(":");
+      const ps=prev.playerStats[playerKey];
+      const name = ps?.name || allTeams.flatMap(t=>t.players.map((pn,pi)=>({k:`${t.id}:${pi}`,pn}))).find(x=>x.k===playerKey)?.pn || "—";
+      const eff = ps ? (ps.pts+ps.reb+ps.ast-(ps.fouls||0)) : 0;
+      hist[idx]={...hist[idx], name, teamId, eff};
+      return {...prev, mvpHistory:hist, version:Date.now()};
+    });
+  }
+  // Admin: delete a matchday MVP entry
+  function deleteMvp(idx){
+    if(!window.confirm("Διαγραφή αυτού του MVP αγωνιστικής;")) return;
+    setState(prev=>{
+      const hist=[...(prev.mvpHistory||[])];
+      hist.splice(idx,1);
+      return {...prev, mvpHistory:hist, version:Date.now()};
+    });
+  }
 
   const empty = rows.length === 0;
 
@@ -1166,7 +1189,10 @@ function MVPTab({ state }) {
             {mvpHistory.map((m,i)=>{
               const team = allTeams.find(t=>t.id===m.teamId);
               return (
-                <div key={i} style={{ background:"#111827", border:"1px solid #1e2d45", borderRadius:12, padding:"14px 10px", textAlign:"center" }}>
+                <div key={i} style={{ background:"#111827", border:"1px solid #1e2d45", borderRadius:12, padding:"14px 10px", textAlign:"center", position:"relative" }}>
+                  {isAdmin && (
+                    <button onClick={()=>deleteMvp(i)} style={{ position:"absolute", top:6, right:6, background:"#1e2d45", border:"none", borderRadius:5, color:"#ef4444", fontSize:11, cursor:"pointer", padding:"2px 6px" }} title="Διαγραφή">✕</button>
+                  )}
                   <div style={{ fontSize:10, color:"#f97316", fontWeight:700, letterSpacing:2, marginBottom:8 }}>ΑΓ. {m.matchday}</div>
                   <TeamLogo teamId={m.teamId} size={48} style={{ margin:"0 auto 8px", display:"block", borderRadius:"50%", border:"2px solid #fbbf24" }}/>
                   <div style={{ fontSize:12, fontWeight:700, color:"#f1f5f9", marginBottom:2 }}>{m.name}</div>
@@ -1175,6 +1201,19 @@ function MVPTab({ state }) {
                     <span style={{ fontSize:14, fontWeight:900, color:"#fbbf24" }}>{m.eff}</span>
                     <span style={{ fontSize:10, color:"#64748b", marginLeft:3 }}>EFF</span>
                   </div>
+                  {isAdmin && (
+                    <select value={m.teamId+":mvp"} onChange={e=>changeMvp(i, e.target.value)}
+                      style={{ marginTop:8, width:"100%", background:"#0d1220", border:"1px solid #2d3f5a", borderRadius:6, color:"#94a3b8", padding:"4px 6px", fontSize:11 }}>
+                      <option value={m.teamId+":mvp"}>— Αλλαγή MVP —</option>
+                      {allTeams.map(t=>(
+                        <optgroup key={t.id} label={t.name}>
+                          {t.players.map((pn,pi)=>(
+                            <option key={`${t.id}:${pi}`} value={`${t.id}:${pi}`}>{pn}</option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                  )}
                 </div>
               );
             })}
@@ -1375,7 +1414,7 @@ function TeamsTab({ state, setState, isAdmin }) {
                   {isAdmin && (
                     <td style={{ ...S.td, textAlign:"center" }}>
                       <div style={{ display:"flex", gap:3, justifyContent:"center", flexWrap:"wrap" }}>
-                        {[["pts","ΠΤ"],["reb","RB"],["ast","AS"],["fouls","ΦΛ"],["threes","3Π"]].map(([f,lbl])=>(
+                        {[["pts","ΠΤ"],["reb","RB"],["ast","AS"],["fouls","ΦΛ"],["threes","3Π"],["games","GP"]].map(([f,lbl])=>(
                           <span key={f} style={{ display:"inline-flex", borderRadius:5, overflow:"hidden", border:"1px solid #2d3f5a" }}>
                             <button onClick={()=>adjustStat(p.key, f, -1)} style={{ background:"#0d1220", border:"none", color:"#ef4444", fontSize:11, fontWeight:700, padding:"2px 5px", cursor:"pointer" }}>−</button>
                             <span style={{ fontSize:10, color:"#64748b", padding:"2px 4px", background:"#111827", alignSelf:"center" }}>{lbl}</span>
@@ -1799,7 +1838,7 @@ export default function App() {
           {tab==="standings" && <StandingsTab state={state} setState={setState} isAdmin={isAdmin}/>}
           {tab==="bracket"  && <BracketTab  state={state} setState={setState} isAdmin={isAdmin}/>}
           {tab==="live"     && <LiveTab     state={state} setState={setState} isAdmin={isAdmin}/>}
-          {tab==="mvp"      && <MVPTab      state={state}/>}
+          {tab==="mvp"      && <MVPTab      state={state} setState={setState} isAdmin={isAdmin}/>}
           {tab==="teams"    && <TeamsTab    state={state} setState={setState} isAdmin={isAdmin}/>}
           {tab==="stats"    && <StatsTab    state={state}/>}
           {tab==="display"  && <DisplayTab  state={state}/>}
