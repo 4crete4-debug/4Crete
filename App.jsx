@@ -573,7 +573,7 @@ function BracketTab({ state, setState, isAdmin }) {
 }
 
 // ─── LIVE TAB ─────────────────────────────────────────────────────────────────
-function LiveTab({ state, setState, isAdmin }) {
+function LiveTab({ state, setState, isAdmin, setControlledCourt }) {
   const [activeCourt, setActiveCourt] = useState(1);
 
   const allTeams = [...state.teams.A, ...state.teams.B];
@@ -583,9 +583,10 @@ function LiveTab({ state, setState, isAdmin }) {
 
   // Tell the sync layer which court THIS browser controls (only when admin)
   useEffect(()=>{
-    if(isAdmin && window.__setMyCourt) window.__setMyCourt(adminCourt);
-    return ()=>{ if(window.__setMyCourt) window.__setMyCourt(null); };
-  },[isAdmin, adminCourt]);
+    if(isAdmin) setControlledCourt(adminCourt);
+    else setControlledCourt(null);
+    return ()=>setControlledCourt(null);
+  },[isAdmin, adminCourt, setControlledCourt]);
 
   return (
     <div>
@@ -1775,8 +1776,10 @@ export default function App() {
   const vCourt1 = useRef(0);
   const vCourt2 = useRef(0);
   const vShared = useRef(0);
-  // Which courts THIS browser is actively controlling (so we don't overwrite our own live edits)
-  const myCourt = useRef(null);
+  // Which court THIS browser actively controls (React state so effects re-run on change)
+  const [controlledCourt, setControlledCourt] = useState(null);
+  const controlledRef = useRef(null);
+  useEffect(()=>{ controlledRef.current = controlledCourt; },[controlledCourt]);
   const saveTimers = useRef({});
   const didSeed = useRef(false);
 
@@ -1807,7 +1810,7 @@ export default function App() {
         let changed = false;
 
         // Court 1 — apply remote unless WE are controlling court 1
-        if(d.court1_v && d.court1_v > vCourt1.current && myCourt.current !== 1){
+        if(d.court1_v && d.court1_v > vCourt1.current && controlledRef.current !== 1){
           try {
             const c1 = JSON.parse(d.court1);
             vCourt1.current = d.court1_v;
@@ -1816,7 +1819,7 @@ export default function App() {
           } catch(e){}
         }
         // Court 2 — apply remote unless WE are controlling court 2
-        if(d.court2_v && d.court2_v > vCourt2.current && myCourt.current !== 2){
+        if(d.court2_v && d.court2_v > vCourt2.current && controlledRef.current !== 2){
           try {
             const c2 = JSON.parse(d.court2);
             vCourt2.current = d.court2_v;
@@ -1839,29 +1842,23 @@ export default function App() {
     return ()=>unsub();
   },[]);
 
-  // Mark which court this browser controls (the admin's selected court)
-  // Updated from the Live tab via a window-level ref set in LiveTab.
-  useEffect(()=>{
-    window.__setMyCourt = (n)=>{ myCourt.current = n; };
-    return ()=>{ delete window.__setMyCourt; };
-  },[]);
+  // controlledCourt is set by the Live tab (passed as prop setControlledCourt).
 
-  // Save COURT changes — ONLY the court this browser controls (myCourt).
-  // This is the key fix: each laptop writes only its own court field,
-  // so the two clocks never overwrite each other.
+  // Save COURT changes — ONLY the court this browser controls.
+  // Each laptop writes only its own court field, so the two clocks never clash.
   useEffect(()=>{
     if(!isAdmin) return;
-    const n = myCourt.current;
-    if(n!==1 && n!==2) return; // not controlling any court right now
+    const n = controlledCourt;
+    if(n!==1 && n!==2) return;
     const cv = n===1 ? vCourt1 : vCourt2;
     const snapStr = JSON.stringify({...state.courts[n], running:false});
-    if(saveTimers.current[`c${n}_last`] === snapStr) return; // no change
+    if(saveTimers.current[`c${n}_last`] === snapStr) return;
     saveTimers.current[`c${n}_last`] = snapStr;
     const newVer = Date.now();
     cv.current = newVer;
     clearTimeout(saveTimers.current[`c${n}`]);
     saveTimers.current[`c${n}`] = setTimeout(()=>saveCourt(n, state.courts[n], newVer), 400);
-  },[state.courts, isAdmin]);
+  },[state.courts, isAdmin, controlledCourt]);
 
   // Save SHARED changes (standings, stats, bracket, mvp, teams)
   useEffect(()=>{
@@ -1988,7 +1985,7 @@ export default function App() {
         <div className="content-area" style={S.content}>
           {tab==="standings" && <StandingsTab state={state} setState={setState} isAdmin={isAdmin}/>}
           {tab==="bracket"  && <BracketTab  state={state} setState={setState} isAdmin={isAdmin}/>}
-          {tab==="live"     && <LiveTab     state={state} setState={setState} isAdmin={isAdmin}/>}
+          {tab==="live"     && <LiveTab     state={state} setState={setState} isAdmin={isAdmin} setControlledCourt={setControlledCourt}/>}
           {tab==="mvp"      && <MVPTab      state={state} setState={setState} isAdmin={isAdmin}/>}
           {tab==="teams"    && <TeamsTab    state={state} setState={setState} isAdmin={isAdmin}/>}
           {tab==="stats"    && <StatsTab    state={state}/>}
