@@ -64,19 +64,59 @@ const INITIAL_TEAMS = {
   B: []
 };
 
-function makeGroupMatches(teams) {
-  const m = [];
-  for (let i=0;i<teams.length;i++)
-    for (let j=i+1;j<teams.length;j++)
-      m.push({ id:`${teams[i].id}-${teams[j].id}`, home:teams[i].id, away:teams[j].id, hs:"", as:"", done:false });
-  return m;
-}
+const LEAGUE_MATCHES = [
+  {id:"0", home:"A1", away:"T7", hs:"0", as:"0", done:false, matchday:1},
+  {id:"1", home:"A2", away:"B5", hs:"0", as:"0", done:false, matchday:1},
+  {id:"2", home:"B1", away:"B6", hs:"0", as:"0", done:false, matchday:1},
+  {id:"3", home:"B3", away:"B4", hs:"0", as:"0", done:false, matchday:1},
+  {id:"4", home:"A6", away:"A4", hs:"0", as:"0", done:false, matchday:1},
+  {id:"5", home:"A6", away:"B3", hs:"0", as:"0", done:false, matchday:2},
+  {id:"6", home:"A1", away:"A2", hs:"0", as:"0", done:false, matchday:2},
+  {id:"7", home:"A4", away:"T7", hs:"0", as:"0", done:false, matchday:2},
+  {id:"8", home:"B1", away:"B4", hs:"0", as:"0", done:false, matchday:2},
+  {id:"9", home:"B5", away:"B6", hs:"0", as:"0", done:false, matchday:2},
+  {id:"10", home:"A1", away:"A4", hs:"0", as:"0", done:false, matchday:3},
+  {id:"11", home:"A2", away:"A6", hs:"0", as:"0", done:false, matchday:3},
+  {id:"12", home:"T7", away:"B1", hs:"0", as:"0", done:false, matchday:3},
+  {id:"13", home:"B3", away:"B5", hs:"0", as:"0", done:false, matchday:3},
+  {id:"14", home:"B4", away:"B6", hs:"0", as:"0", done:false, matchday:3},
+  {id:"15", home:"A1", away:"A6", hs:"0", as:"0", done:false, matchday:4},
+  {id:"16", home:"A2", away:"A4", hs:"0", as:"0", done:false, matchday:4},
+  {id:"17", home:"T7", away:"B4", hs:"0", as:"0", done:false, matchday:4},
+  {id:"18", home:"B1", away:"B5", hs:"0", as:"0", done:false, matchday:4},
+  {id:"19", home:"B3", away:"B6", hs:"0", as:"0", done:false, matchday:4},
+  {id:"20", home:"A1", away:"B1", hs:"0", as:"0", done:false, matchday:5},
+  {id:"21", home:"A2", away:"T7", hs:"0", as:"0", done:false, matchday:5},
+  {id:"22", home:"A4", away:"B3", hs:"0", as:"0", done:false, matchday:5},
+  {id:"23", home:"A6", away:"B6", hs:"0", as:"0", done:false, matchday:5},
+  {id:"24", home:"B4", away:"B5", hs:"0", as:"0", done:false, matchday:5},
+  {id:"25", home:"A1", away:"B3", hs:"0", as:"0", done:false, matchday:6},
+  {id:"26", home:"A2", away:"B1", hs:"0", as:"0", done:false, matchday:6},
+  {id:"27", home:"A4", away:"B4", hs:"0", as:"0", done:false, matchday:6},
+  {id:"28", home:"A6", away:"B5", hs:"0", as:"0", done:false, matchday:6},
+  {id:"29", home:"T7", away:"B6", hs:"0", as:"0", done:false, matchday:6},
+  {id:"30", home:"A1", away:"B4", hs:"0", as:"0", done:false, matchday:7},
+  {id:"31", home:"A2", away:"B3", hs:"0", as:"0", done:false, matchday:7},
+  {id:"32", home:"A4", away:"B6", hs:"0", as:"0", done:false, matchday:7},
+  {id:"33", home:"A6", away:"B1", hs:"0", as:"0", done:false, matchday:7},
+  {id:"34", home:"T7", away:"B5", hs:"0", as:"0", done:false, matchday:7},
+  {id:"35", home:"A1", away:"B5", hs:"0", as:"0", done:false, matchday:8},
+  {id:"36", home:"A2", away:"B6", hs:"0", as:"0", done:false, matchday:8},
+  {id:"37", home:"A4", away:"B1", hs:"0", as:"0", done:false, matchday:8},
+  {id:"38", home:"A6", away:"B4", hs:"0", as:"0", done:false, matchday:8},
+  {id:"39", home:"T7", away:"B3", hs:"0", as:"0", done:false, matchday:8},
+  {id:"40", home:"A1", away:"B6", hs:"0", as:"0", done:false, matchday:9},
+  {id:"41", home:"A2", away:"B4", hs:"0", as:"0", done:false, matchday:9},
+  {id:"42", home:"A4", away:"B5", hs:"0", as:"0", done:false, matchday:9},
+  {id:"43", home:"A6", away:"T7", hs:"0", as:"0", done:false, matchday:9},
+  {id:"44", home:"B1", away:"B3", hs:"0", as:"0", done:false, matchday:9}
+];
 
 function defaultState() {
   return {
     teams: { ...INITIAL_TEAMS },
-    matchesA: makeGroupMatches(INITIAL_TEAMS.A),
-    matchesB: makeGroupMatches(INITIAL_TEAMS.B),
+    matchesA: LEAGUE_MATCHES.map(m=>({...m})),
+    matchesB: [],
     playoffs: {
       qf: Array(4).fill(null).map((_,i)=>({ id:`qf${i}`, home:"", away:"", hs:"", as:"", done:false })),
       sf: Array(2).fill(null).map((_,i)=>({ id:`sf${i}`, home:"", away:"", hs:"", as:"", done:false })),
@@ -373,57 +413,76 @@ function StandingsTab({ state, setState, isAdmin }) {
           </div>
         </div>
 
-        {/* Matches */}
+        {/* Matches grouped by matchday */}
         <div style={S.card}>
           <div style={S.cardHeader}>
             <div style={{ display:"flex", alignItems:"center", gap:10 }}>
               <div style={{ width:3, height:20, background:color, borderRadius:2 }}/>
-              <span style={{ fontWeight:800, fontSize:15 }}>Αγώνες{label?` — Όμιλος ${label}`:""}</span>
+              <span style={{ fontWeight:800, fontSize:15 }}>Αγώνες</span>
             </div>
+            <span style={{ fontSize:12, color:"#475569" }}>{matches.filter(m=>m.done).length}/{matches.length}</span>
           </div>
-          <div style={{ padding:"12px 16px" }}>
-            {matches.map((m, i) => {
-              const ht = allTeams.find(t=>t.id===m.home);
-              const at = allTeams.find(t=>t.id===m.away);
+          {(() => {
+            // Group by matchday
+            const maxMd = Math.max(...matches.map(m=>m.matchday||1));
+            return Array.from({length:maxMd},(_,i)=>i+1).map(md=>{
+              const mdMatches = matches.filter(m=>(m.matchday||1)===md);
+              const allDone = mdMatches.every(m=>m.done);
+              const anyDone = mdMatches.some(m=>m.done);
               return (
-                <div key={m.id} style={{
-                  display:"flex", alignItems:"center", gap:8, padding:"8px 10px",
-                  borderRadius:8, marginBottom:5,
-                  background: m.done ? "#0a1a0f" : "#0d1220",
-                  border: `1px solid ${m.done?"#22c55e22":"#1e2d45"}`,
-                }}>
-                  <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"flex-end", gap:6 }}>
-                    <span style={{ fontSize:13, color:m.done?"#f1f5f9":"#94a3b8", fontWeight:m.done?600:400, textAlign:"right" }}>{ht?.name}</span>
-                    <TeamLogo teamId={m.home} size={24}/>
+                <div key={md}>
+                  <div style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 16px 6px", borderTop: md>1?"1px solid #111827":"none" }}>
+                    <span style={{ fontSize:12, fontWeight:800, letterSpacing:1, color: allDone?"#22c55e":anyDone?"#fbbf24":color }}>ΑΓΩΝΙΣΤΙΚΗ {md}</span>
+                    {allDone && <span style={{ fontSize:11, color:"#22c55e" }}>✓ Ολοκληρώθηκε</span>}
                   </div>
-                  {isAdmin && !m.done ? (
-                    <>
-                      <input type="number" min="0" value={m.hs} onChange={e=>updateMatch(key,i,"hs",e.target.value)}
-                        onKeyDown={e=>e.key==="Enter"&&confirmMatch(key,i)}
-                        style={{ ...S.input, color:"#f97316" }} />
-                      <span style={{ color:"#334155", fontWeight:700, fontSize:16 }}>–</span>
-                      <input type="number" min="0" value={m.as} onChange={e=>updateMatch(key,i,"as",e.target.value)}
-                        onKeyDown={e=>e.key==="Enter"&&confirmMatch(key,i)}
-                        style={{ ...S.input, color:"#3b82f6" }} />
-                      <button onClick={()=>confirmMatch(key,i)} style={{ ...S.btnPrimary, padding:"5px 12px", fontSize:12 }}>✓</button>
-                    </>
-                  ) : (
-                    <div style={{ display:"flex", alignItems:"center", gap:6, minWidth:80, justifyContent:"center" }}>
-                      <span style={{ fontWeight:900, fontSize:15, color:"#f1f5f9" }}>{m.done?`${m.hs} – ${m.as}`:"vs"}</span>
-                      {m.done && isAdmin && (
-                        <button onClick={()=>undoMatch(key,i)} style={{ ...S.btnGhost, padding:"2px 6px", fontSize:11 }}>↩</button>
-                      )}
-                    </div>
-                  )}
-                  <div style={{ flex:1, display:"flex", alignItems:"center", gap:6 }}>
-                    <TeamLogo teamId={m.away} size={24}/>
-                    <span style={{ fontSize:13, color:m.done?"#f1f5f9":"#94a3b8", fontWeight:m.done?600:400 }}>{at?.name}</span>
+                  <div style={{ padding:"0 16px 8px" }}>
+                    {mdMatches.map((m,idx)=>{
+                      const i = matches.indexOf(m);
+                      const ht = allTeams.find(t=>t.id===m.home);
+                      const at = allTeams.find(t=>t.id===m.away);
+                      return (
+                        <div key={m.id} style={{
+                          display:"flex", alignItems:"center", gap:8, padding:"7px 8px",
+                          borderRadius:8, marginBottom:4,
+                          background: m.done ? "#0a1a0f" : "#0d1220",
+                          border: `1px solid ${m.done?"#22c55e22":"#1e2d45"}`,
+                        }}>
+                          <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"flex-end", gap:6 }}>
+                            <span style={{ fontSize:13, color:m.done?"#f1f5f9":"#94a3b8", fontWeight:m.done?600:400, textAlign:"right" }}>{ht?.name}</span>
+                            <TeamLogo teamId={m.home} size={22}/>
+                          </div>
+                          {isAdmin && !m.done ? (
+                            <>
+                              <input type="number" min="0" value={m.hs} onChange={e=>updateMatch(key,i,"hs",e.target.value)}
+                                onKeyDown={e=>e.key==="Enter"&&confirmMatch(key,i)}
+                                style={{ ...S.input, color:"#f97316" }} />
+                              <span style={{ color:"#334155", fontWeight:700, fontSize:16 }}>–</span>
+                              <input type="number" min="0" value={m.as} onChange={e=>updateMatch(key,i,"as",e.target.value)}
+                                onKeyDown={e=>e.key==="Enter"&&confirmMatch(key,i)}
+                                style={{ ...S.input, color:"#3b82f6" }} />
+                              <button onClick={()=>confirmMatch(key,i)} style={{ ...S.btnPrimary, padding:"5px 12px", fontSize:12 }}>✓</button>
+                            </>
+                          ) : (
+                            <div style={{ display:"flex", alignItems:"center", gap:6, minWidth:80, justifyContent:"center" }}>
+                              <span style={{ fontWeight:900, fontSize:15, color:"#f1f5f9" }}>{m.done?`${m.hs} – ${m.as}`:"vs"}</span>
+                              {m.done && isAdmin && (
+                                <button onClick={()=>undoMatch(key,i)} style={{ ...S.btnGhost, padding:"2px 6px", fontSize:11 }}>↩</button>
+                              )}
+                            </div>
+                          )}
+                          <div style={{ flex:1, display:"flex", alignItems:"center", gap:6 }}>
+                            <TeamLogo teamId={m.away} size={22}/>
+                            <span style={{ fontSize:13, color:m.done?"#f1f5f9":"#94a3b8", fontWeight:m.done?600:400 }}>{at?.name}</span>
+                          </div>
+                          {m.done && <span style={{ color:"#22c55e", fontSize:11 }}>✓</span>}
+                        </div>
+                      );
+                    })}
                   </div>
-                  {m.done && <span style={{ color:"#22c55e", fontSize:13 }}>✓</span>}
                 </div>
               );
-            })}
-          </div>
+            });
+          })()}
         </div>
       </div>
     );
@@ -693,7 +752,8 @@ function CourtPanel({ courtNum, court: rawCourt, allTeams, state, setState, isAd
             // Period ends -> auto-start break: 1min after P1 & P3, 3min after P2 (halftime)
             const breakSecs = c.period===2 ? 180 : 60;
             const breakLabel = c.period===2 ? "ΗΜΙΧΡΟΝΟ" : "ΔΙΑΛΕΙΜΜΑ";
-            return {...prev,courts:{...prev.courts,[courtNum]:{...c,timeLeft:480,running:false,period:c.period+1,breakTime:breakSecs,breakRunning:true,breakLabel}},version:Date.now()};
+            return {...prev,courts:{...prev.courts,[courtNum]:{...c,timeLeft:480,running:false,period:c.period+1,breakTime:breakSecs,breakRunning:true,breakLabel,
+              teamA:{...c.teamA,fouls:0}, teamB:{...c.teamB,fouls:0}}},version:Date.now()};
           }
           return {...prev,courts:{...prev.courts,[courtNum]:{...c,timeLeft:next}},version:Date.now()};
         });
@@ -803,7 +863,7 @@ function CourtPanel({ courtNum, court: rawCourt, allTeams, state, setState, isAd
 
   function toggle(){ updateCourt(c=>({...c,running:!c.running})); }
   function resetPer(){ updateCourt(c=>({...c,timeLeft:480,running:false})); }
-  function nextPer(){ updateCourt(c=>c.period>=4?c:{...c,period:c.period+1,timeLeft:480,running:false}); }
+  function nextPer(){ updateCourt(c=>c.period>=4?c:{...c,period:c.period+1,timeLeft:480,running:false,teamA:{...c.teamA,fouls:0},teamB:{...c.teamB,fouls:0}}); }
 
   function addStat(side,pi,field,val){
     updateCourt(c=>{
@@ -1029,6 +1089,15 @@ function CourtPanel({ courtNum, court: rawCourt, allTeams, state, setState, isAd
                     <button onClick={startExtension} style={{...S.btnSecondary,color:"#a855f7",borderColor:"#a855f733"}} title="Παράταση 5 λεπτών">⏱ Παράταση</button>
                     <button onClick={endGame} style={{...S.btnGreen,padding:"7px 16px"}}>✓ Τέλος</button>
                     <button onClick={cancelGame} style={{...S.btnGhost,color:"#ef4444",borderColor:"#ef444433"}} title="Ακύρωση — δεν καταγράφεται τίποτα">✕ Ακύρωση</button>
+                    <div style={{display:"flex",alignItems:"center",gap:4,marginTop:4}}>
+                      <span style={{fontSize:11,color:"#475569",marginRight:2}}>Χρόνος:</span>
+                      {[1,5,10,30,60].map(s=>(
+                        <button key={s} onClick={()=>updateCourt(c=>({...c,timeLeft:Math.max(0,c.timeLeft-s)}))} style={{...S.btnGhost,padding:"3px 7px",fontSize:11,color:"#ef4444",borderColor:"#ef444433"}}>-{s<60?s+"″":s/60+"′"}</button>
+                      ))}
+                      {[1,5,10,30,60].map(s=>(
+                        <button key={s} onClick={()=>updateCourt(c=>({...c,timeLeft:Math.min(c.timeLeft+s,599)}))} style={{...S.btnGhost,padding:"3px 7px",fontSize:11,color:"#22c55e",borderColor:"#22c55e33"}}>+{s<60?s+"″":s/60+"′"}</button>
+                      ))}
+                    </div>
                   </div>
                 )}
                 {isAdmin && <div style={{fontSize:10,color:"#334155",marginTop:6}}>Spacebar = start/stop</div>}
@@ -1388,11 +1457,13 @@ function TeamsTab({ state, setState, isAdmin }) {
     const trimmed = (name||"").trim();
     if(!trimmed) return;
     setState(prev=>{
-      const grp = teamId[0]==="A" ? "A" : "B";
+      // Find which group actually contains this team
       const teams = {...prev.teams};
-      teams[grp] = teams[grp].map(t=>{
-        if(t.id!==teamId) return t;
-        return {...t, players:[...t.players, trimmed]};
+      Object.keys(teams).forEach(grp=>{
+        teams[grp] = teams[grp].map(t=>{
+          if(t.id!==teamId) return t;
+          return {...t, players:[...t.players, trimmed]};
+        });
       });
       return {...prev, teams, version:Date.now()};
     });
@@ -1401,11 +1472,12 @@ function TeamsTab({ state, setState, isAdmin }) {
   function removePlayerFromTeam(teamId, playerIndex){
     if(!window.confirm("Αφαίρεση παίκτη από τη λίστα;")) return;
     setState(prev=>{
-      const grp = teamId[0]==="A" ? "A" : "B";
       const teams = {...prev.teams};
-      teams[grp] = teams[grp].map(t=>{
-        if(t.id!==teamId) return t;
-        return {...t, players:t.players.filter((_,i)=>i!==playerIndex)};
+      Object.keys(teams).forEach(grp=>{
+        teams[grp] = teams[grp].map(t=>{
+          if(t.id!==teamId) return t;
+          return {...t, players:t.players.filter((_,i)=>i!==playerIndex)};
+        });
       });
       return {...prev, teams, version:Date.now()};
     });
@@ -1550,7 +1622,7 @@ function TeamsTab({ state, setState, isAdmin }) {
               ))}
             </tbody>
           </table>
-          {isAdmin && <AddPlayerRow teamId={team.id} accentColor={accentColor} onAdd={addPlayerToTeam}/>}
+          {isAdmin && <AddPlayerRow key={`add-${team.id}`} teamId={team.id} accentColor={accentColor} onAdd={addPlayerToTeam}/>}
         </div>
 
         {/* Team game results */}
@@ -1680,19 +1752,19 @@ function DisplayTab({ state }) {
 
           {/* Team A */}
           <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:16 }}>
-            <TeamLogo teamId={court.teamA.teamId} size={isFullscreen?160:120}
+            <TeamLogo teamId={court.teamA.teamId} size={isFullscreen?220:160}
               style={{ borderRadius:"50%", border:"4px solid #f97316", boxShadow:"0 0 60px #f9731644" }}/>
-            <div style={{ fontSize:isFullscreen?28:22, fontWeight:900, color:"#f97316", textAlign:"center", maxWidth:300 }}>
+            <div style={{ fontSize:isFullscreen?38:28, fontWeight:900, color:"#f97316", textAlign:"center", maxWidth:400 }}>
               {tA?.name || "—"}
             </div>
             <div style={{
-              fontSize:isFullscreen?180:140, fontWeight:900, color:"#f1f5f9", lineHeight:1,
+              fontSize:isFullscreen?240:180, fontWeight:900, color:"#f1f5f9", lineHeight:1,
               textShadow:"0 0 80px #f9731633",
               fontVariantNumeric:"tabular-nums",
             }}>
               {court.teamA.score}
             </div>
-            <div style={{ fontSize:isFullscreen?18:15, color:court.teamA.fouls>=5?"#ef4444":"#64748b", fontWeight:600 }}>
+            <div style={{ fontSize:isFullscreen?24:18, color:court.teamA.fouls>=5?"#ef4444":"#64748b", fontWeight:600 }}>
               Φάουλ: {court.teamA.fouls}
               {court.teamA.fouls>=5 && <span style={{ color:"#ef4444", marginLeft:6 }}>⚠️</span>}
             </div>
@@ -1704,7 +1776,7 @@ function DisplayTab({ state }) {
               <div>
                 <div style={{ fontSize:isFullscreen?22:16, letterSpacing:3, color:"#fbbf24", fontWeight:800, marginBottom:6 }}>{court.breakLabel||"ΔΙΑΛΕΙΜΜΑ"}</div>
                 <div style={{
-                  fontSize:isFullscreen?120:88, fontWeight:900, color:"#fbbf24",
+                  fontSize:isFullscreen?160:120, fontWeight:900, color:"#fbbf24",
                   fontVariantNumeric:"tabular-nums", textShadow:"0 0 60px #fbbf2466", lineHeight:1,
                 }}>{fmt(court.breakTime)}</div>
                 <div style={{ marginTop:12, fontSize:isFullscreen?16:13, color:"#475569", fontWeight:700 }}>ΕΠΟΜΕΝΗ: ΠΕΡΙΟΔΟΣ {court.period}</div>
@@ -1712,7 +1784,7 @@ function DisplayTab({ state }) {
             ) : (
               <>
                 <div style={{
-                  fontSize:isFullscreen?120:88, fontWeight:900,
+                  fontSize:isFullscreen?160:120, fontWeight:900,
                   color: urgent ? "#ef4444" : "#f1f5f9",
                   fontVariantNumeric:"tabular-nums",
                   textShadow: urgent ? "0 0 60px #ef444499" : "none",
@@ -1732,26 +1804,26 @@ function DisplayTab({ state }) {
                   </span>
                 </div>
 
-                <div style={{ marginTop:20, fontSize:isFullscreen?28:22, fontWeight:900, color:"#334155" }}>VS</div>
+                <div style={{ marginTop:20, fontSize:isFullscreen?36:26, fontWeight:900, color:"#334155" }}>VS</div>
               </>
             )}
           </div>
 
           {/* Team B */}
           <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:16 }}>
-            <TeamLogo teamId={court.teamB.teamId} size={isFullscreen?160:120}
+            <TeamLogo teamId={court.teamB.teamId} size={isFullscreen?220:160}
               style={{ borderRadius:"50%", border:"4px solid #3b82f6", boxShadow:"0 0 60px #3b82f644" }}/>
-            <div style={{ fontSize:isFullscreen?28:22, fontWeight:900, color:"#3b82f6", textAlign:"center", maxWidth:300 }}>
+            <div style={{ fontSize:isFullscreen?38:28, fontWeight:900, color:"#3b82f6", textAlign:"center", maxWidth:400 }}>
               {tB?.name || "—"}
             </div>
             <div style={{
-              fontSize:isFullscreen?180:140, fontWeight:900, color:"#f1f5f9", lineHeight:1,
+              fontSize:isFullscreen?240:180, fontWeight:900, color:"#f1f5f9", lineHeight:1,
               textShadow:"0 0 80px #3b82f633",
               fontVariantNumeric:"tabular-nums",
             }}>
               {court.teamB.score}
             </div>
-            <div style={{ fontSize:isFullscreen?18:15, color:court.teamB.fouls>=5?"#ef4444":"#64748b", fontWeight:600 }}>
+            <div style={{ fontSize:isFullscreen?24:18, color:court.teamB.fouls>=5?"#ef4444":"#64748b", fontWeight:600 }}>
               Φάουλ: {court.teamB.fouls}
               {court.teamB.fouls>=5 && <span style={{ color:"#ef4444", marginLeft:6 }}>⚠️</span>}
             </div>
@@ -1764,12 +1836,12 @@ function DisplayTab({ state }) {
             {[...court.teamA.players.map(p=>({...p,color:"#f97316"})),
               ...court.teamB.players.map(p=>({...p,color:"#3b82f6"}))].map((p,i)=>(
               <div key={i} style={{ textAlign:"center", minWidth:80 }}>
-                <div style={{ fontSize:isFullscreen?14:12, color:p.color, fontWeight:700, marginBottom:3 }}>{p.number?`#${p.number} `:""}{p.name.split(" ")[0]}</div>
+                <div style={{ fontSize:isFullscreen?20:15, color:p.color, fontWeight:700, marginBottom:4 }}>{p.number?`#${p.number} `:""}{p.name.split(" ")[0]}</div>
                 <div style={{ display:"flex", gap:8, justifyContent:"center" }}>
-                  <span style={{ fontSize:isFullscreen?18:14, fontWeight:900, color:"#f1f5f9" }}>{p.pts}</span>
-                  <span style={{ fontSize:isFullscreen?12:10, color:"#475569", alignSelf:"flex-end", paddingBottom:2 }}>ΠΤΣ</span>
-                  <span style={{ fontSize:isFullscreen?16:12, color:"#64748b" }}>{p.reb}rb</span>
-                  <span style={{ fontSize:isFullscreen?16:12, color:"#64748b" }}>{p.ast}as</span>
+                  <span style={{ fontSize:isFullscreen?26:18, fontWeight:900, color:"#f1f5f9" }}>{p.pts}</span>
+                  <span style={{ fontSize:isFullscreen?16:12, color:"#475569", alignSelf:"flex-end", paddingBottom:2 }}>ΠΤΣ</span>
+                  <span style={{ fontSize:isFullscreen?20:14, color:"#64748b" }}>{p.reb}rb</span>
+                  <span style={{ fontSize:isFullscreen?20:14, color:"#64748b" }}>{p.ast}as</span>
                 </div>
               </div>
             ))}
@@ -2022,6 +2094,23 @@ export default function App() {
             </div>
             {isAdmin ? (
               <button onClick={()=>setIsAdmin(false)} style={{ ...S.btnGhost, color:"#f97316", borderColor:"#f9731633" }}>🔓 Admin</button>
+              <button onClick={async()=>{
+                if(!window.confirm("ΜΗΔΕΝΙΣΜΟΣ ΟΛΩΝ ΤΩΝ ΔΕΔΟΜΕΝΩΝ;\n\nΘα διαγραφούν:\n• Βαθμολογία\n• Στατιστικά παικτών\n• MVP ιστορικό\n• Bracket\n\nΟι ομάδες και οι παίκτες θα επανέλθουν στις αρχικές τιμές.\n\nΔΕΝ ΥΠΑΡΧΕΙ ΑΝΑΙΡΕΣΗ!")) return;
+                const fresh = defaultState();
+                setState(fresh);
+                try {
+                  await setDoc(DOC_REF, {
+                    shared: JSON.stringify({...fresh, courts:undefined}),
+                    shared_v: Date.now(),
+                    court1: JSON.stringify(fresh.courts[1]),
+                    court1_v: Date.now(),
+                    court2: JSON.stringify(fresh.courts[2]),
+                    court2_v: Date.now(),
+                    data: null,
+                  });
+                  alert("✅ Τα δεδομένα μηδενίστηκαν! Ανανέωσε τη σελίδα.");
+                } catch(e){ alert("Σφάλμα: " + e.message); }
+              }} style={{ ...S.btnGhost, color:"#ef4444", borderColor:"#ef444433", fontSize:11 }} title="Μηδενισμός δεδομένων — ΠΡΟΣΟΧΗ">🗑 Reset</button>
             ) : (
               <button onClick={()=>setShowPin(true)} style={S.btnSecondary}>🔒 <span className="admin-btn-text">Σύνδεση Admin</span></button>
             )}
