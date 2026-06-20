@@ -1687,10 +1687,11 @@ function TeamsTab({ state, setState, isAdmin, saveNow }) {
           </div>
           {playerStats.length === 0 && isAdmin && (
             <div style={{ padding:"16px 20px", color:"#64748b", fontSize:13 }}>
-              Δεν υπάρχουν παίκτες ακόμα. Προσθέσ' τους παρακάτω.
+              Δεν υπάρχουν παίκτες ακόμα. Προσθέσ τους παρακάτω.
             </div>
           )}
-          {playerStats.length > 0 && <table style={S.table}>
+          {playerStats.length > 0 && (
+          <table style={S.table}>
             <thead>
               <tr style={{ background:"#0d1220" }}>
                 <th style={S.th}>ΠΑΙΚΤΗΣ</th>
@@ -1745,7 +1746,8 @@ function TeamsTab({ state, setState, isAdmin, saveNow }) {
                 </tr>
               ))}
             </tbody>
-          </table>}
+          </table>
+          )}
           {isAdmin && <AddPlayerRow key={`add-${team.id}`} teamId={team.id} accentColor={accentColor} onAdd={addPlayerToTeam}/>}
         </div>
 
