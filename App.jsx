@@ -1505,27 +1505,6 @@ function EditableName({ name, onSave }){
 }
 
 // ─── EDITABLE NAME ────────────────────────────────────────────────────────────
-function EditableName({ name, onSave }){
-  const [editing, setEditing] = useState(false);
-  const [val, setVal] = useState(name);
-  if(!editing) return (
-    <span onClick={()=>{ setVal(name); setEditing(true); }}
-      style={{ cursor:"pointer", borderBottom:"1px dashed #334155", paddingBottom:1 }}
-      title="Κλικ για επεξεργασία ονόματος">
-      {name}
-    </span>
-  );
-  return (
-    <span style={{ display:"flex", gap:4, alignItems:"center" }}>
-      <input autoFocus value={val} onChange={e=>setVal(e.target.value)}
-        onKeyDown={e=>{ if(e.key==="Enter"){ onSave(val); setEditing(false); } if(e.key==="Escape") setEditing(false); }}
-        style={{ background:"#0d1220", border:"1px solid #f97316", borderRadius:5, color:"#f1f5f9", padding:"2px 8px", fontSize:13, width:180, outline:"none" }}/>
-      <button onClick={()=>{ onSave(val); setEditing(false); }} style={{ background:"#22c55e", border:"none", borderRadius:5, color:"#fff", fontSize:11, fontWeight:700, padding:"3px 8px", cursor:"pointer" }}>✓</button>
-      <button onClick={()=>setEditing(false)} style={{ background:"#334155", border:"none", borderRadius:5, color:"#94a3b8", fontSize:11, padding:"3px 7px", cursor:"pointer" }}>✕</button>
-    </span>
-  );
-}
-
 // ─── ADD PLAYER ROW ───────────────────────────────────────────────────────────
 function AddPlayerRow({ teamId, accentColor, onAdd }){
   const [name, setName] = useState("");
