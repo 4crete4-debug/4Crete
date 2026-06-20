@@ -57,7 +57,7 @@ const INITIAL_TEAMS = {
     { id:"B4", name:"BMI>30", color:LEAGUE_COLOR, group:"A",
       players:["Μανος Παπαδουλης","Γιωργος Κολαρετακης","Αντριαν Στογιανοβιτς","Γιωργος Αλετρας","Μαρινος Νομικος","Κωστας Στρατακης","Κωστας Δερμιτζακης"] },
     { id:"B5", name:"Μιλτιάδηδες", color:LEAGUE_COLOR, group:"A",
-      players:["Μιλτιάδης Καραγιαννάκης","Μιχάλης Βατσινάς","Νικόλας Μεταξωτός","Μαράκης Αλέξανδρος","Μανιαδής Εμμανουήλ","Γιώργος Παπαδάκης","Πετράν"] },
+      players:["Μιλτιάδης Καραγιαννάκης","Μιχάλης Βατσινάς","Νικολάκης Μεταξωτός","Μαράκης Αλέξανδρος","Μανιαδής Εμμανουήλ","Γιώργος Παπαδάκης","Πετράν"] },
     { id:"B6", name:"Balkan Buckets", color:LEAGUE_COLOR, group:"A",
       players:["Τίτος Χατζηδάκης","Γεώργιος Καραβιώτης","Νίκος Δάλλας","Γεώργιος Αντωνογιαννάκης","Μιχάλης Μαρής","Γιώργος Παπαδόπουλος"] },
   ],
@@ -1622,12 +1622,15 @@ function TeamsTab({ state, setState, isAdmin, saveNow }) {
     return Object.values(st).sort((a,b)=>b.pts-a.pts).findIndex(t=>t.id===selectedTeam)+1;
   })();
 
-  // Get player stats for this team
-  const playerStats = team.players.map((name, i) => {
-    const key = `${team.id}:${i}`;
+  // Get player stats for this team (keep originalIdx for correct renaming)
+  const playerStats = team.players.map((name, originalIdx) => {
+    const key = `${team.id}:${originalIdx}`;
     const s = state.playerStats[key] || {pts:0,reb:0,ast:0,fouls:0,threes:0,games:0};
     const eff = (s.pts||0)+(s.reb||0)+(s.ast||0)-(s.fouls||0);
-    return { name, ...s, key, eff, ppg: s.games ? (s.pts/s.games).toFixed(1) : "—", rpg: s.games ? (s.reb/s.games).toFixed(1) : "—", apg: s.games ? (s.ast/s.games).toFixed(1) : "—" };
+    return { name, ...s, key, originalIdx, eff,
+      ppg: s.games ? (s.pts/s.games).toFixed(1) : "—",
+      rpg: s.games ? (s.reb/s.games).toFixed(1) : "—",
+      apg: s.games ? (s.ast/s.games).toFixed(1) : "—" };
   }).sort((a,b)=>b.pts-a.pts);
 
   // Team games
@@ -1682,7 +1685,12 @@ function TeamsTab({ state, setState, isAdmin, saveNow }) {
             <span style={{ fontWeight:800, fontSize:15 }}>Παίκτες & Στατιστικά</span>
             <span style={{ fontSize:12, color:"#475569" }}>{team.players.length} παίκτες</span>
           </div>
-          <table style={S.table}>
+          {playerStats.length === 0 && isAdmin && (
+            <div style={{ padding:"16px 20px", color:"#64748b", fontSize:13 }}>
+              Δεν υπάρχουν παίκτες ακόμα. Προσθέσ' τους παρακάτω.
+            </div>
+          )}
+          {playerStats.length > 0 && <table style={S.table}>
             <thead>
               <tr style={{ background:"#0d1220" }}>
                 <th style={S.th}>ΠΑΙΚΤΗΣ</th>
@@ -1706,7 +1714,7 @@ function TeamsTab({ state, setState, isAdmin, saveNow }) {
                     <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                       {i===0 && <span style={{ fontSize:16 }}>⭐</span>}
                       {isAdmin
-                        ? <EditableName name={p.name} onSave={n=>renamePlayer(team.id, i, n)}/>
+                        ? <EditableName name={p.name} onSave={n=>renamePlayer(team.id, p.originalIdx, n)}/>
                         : p.name}
                     </div>
                   </td>
@@ -1730,14 +1738,14 @@ function TeamsTab({ state, setState, isAdmin, saveNow }) {
                             <button onClick={()=>adjustStat(p.key, f, 1)} style={{ background:"#1e2d45", border:"none", color:"#22c55e", fontSize:11, fontWeight:700, padding:"2px 5px", cursor:"pointer" }}>+</button>
                           </span>
                         ))}
-                        <button onClick={()=>removePlayerFromTeam(team.id, i)} style={{ background:"#1a0505", border:"1px solid #ef444433", borderRadius:5, color:"#ef4444", fontSize:11, fontWeight:700, padding:"2px 7px", cursor:"pointer" }} title="Αφαίρεση παίκτη από τη λίστα">✕</button>
+                        <button onClick={()=>removePlayerFromTeam(team.id, p.originalIdx)} style={{ background:"#1a0505", border:"1px solid #ef444433", borderRadius:5, color:"#ef4444", fontSize:11, fontWeight:700, padding:"2px 7px", cursor:"pointer" }} title="Αφαίρεση παίκτη από τη λίστα">✕</button>
                       </div>
                     </td>
                   )}
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table>}
           {isAdmin && <AddPlayerRow key={`add-${team.id}`} teamId={team.id} accentColor={accentColor} onAdd={addPlayerToTeam}/>}
         </div>
 
