@@ -2294,8 +2294,10 @@ export default function App() {
               {connected?"Live":"..."}
             </div>
             {isAdmin ? (
-              <button onClick={()=>setIsAdmin(false)} style={{ ...S.btnGhost, color:"#f97316", borderColor:"#f9731633" }}>🔓 Admin</button>
-              <button onClick={handleMigration} style={{ ...S.btnGhost, color:"#f59e0b", borderColor:"#f59e0b33", fontSize:11 }} title="Ενημέρωση ομάδων">🔄 Migration</button>
+              <>
+                <button onClick={()=>setIsAdmin(false)} style={{ ...S.btnGhost, color:"#f97316", borderColor:"#f9731633" }}>🔓 Admin</button>
+                <button onClick={handleMigration} style={{ ...S.btnGhost, color:"#f59e0b", borderColor:"#f59e0b33", fontSize:11 }} title="Ενημέρωση ομάδων">🔄 Migration</button>
+              </>
             ) : (
               <button onClick={()=>setShowPin(true)} style={S.btnSecondary}>🔒 <span className="admin-btn-text">Σύνδεση Admin</span></button>
             )}
