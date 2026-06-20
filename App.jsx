@@ -1504,12 +1504,40 @@ function EditableName({ name, onSave }){
   );
 }
 
+// ─── EDITABLE NAME ────────────────────────────────────────────────────────────
+function EditableName({ name, onSave }){
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(name);
+  if(!editing) return (
+    <span onClick={()=>{ setVal(name); setEditing(true); }}
+      style={{ cursor:"pointer", borderBottom:"1px dashed #334155", paddingBottom:1 }}
+      title="Κλικ για επεξεργασία ονόματος">
+      {name}
+    </span>
+  );
+  return (
+    <span style={{ display:"flex", gap:4, alignItems:"center" }}>
+      <input autoFocus value={val} onChange={e=>setVal(e.target.value)}
+        onKeyDown={e=>{ if(e.key==="Enter"){ onSave(val); setEditing(false); } if(e.key==="Escape") setEditing(false); }}
+        style={{ background:"#0d1220", border:"1px solid #f97316", borderRadius:5, color:"#f1f5f9", padding:"2px 8px", fontSize:13, width:180, outline:"none" }}/>
+      <button onClick={()=>{ onSave(val); setEditing(false); }} style={{ background:"#22c55e", border:"none", borderRadius:5, color:"#fff", fontSize:11, fontWeight:700, padding:"3px 8px", cursor:"pointer" }}>✓</button>
+      <button onClick={()=>setEditing(false)} style={{ background:"#334155", border:"none", borderRadius:5, color:"#94a3b8", fontSize:11, padding:"3px 7px", cursor:"pointer" }}>✕</button>
+    </span>
+  );
+}
+
+// ─── ADD PLAYER ROW ───────────────────────────────────────────────────────────
 function AddPlayerRow({ teamId, accentColor, onAdd }){
   const [name, setName] = useState("");
-  const submit = ()=>{ if(name.trim()){ onAdd(teamId, name); setName(""); } };
+  const submit = ()=>{
+    if(name.trim()){
+      onAdd(teamId, name);
+      setName("");
+    }
+  };
   return (
     <div style={{ padding:"12px 16px", borderTop:"1px solid #1e2d45", display:"flex", gap:8, alignItems:"center" }}>
-      <span style={{ fontSize:12, color:"#64748b", fontWeight:700 }}>+ Προσθήκη παίκτη:</span>
+      <span style={{ fontSize:12, color:"#64748b", fontWeight:700, whiteSpace:"nowrap" }}>+ Νέος παίκτης:</span>
       <input
         value={name}
         onChange={e=>setName(e.target.value)}
@@ -1522,39 +1550,48 @@ function AddPlayerRow({ teamId, accentColor, onAdd }){
   );
 }
 
-function TeamsTab({ state, setState, isAdmin, saveNow }) {
-  // Admin: directly adjust a player's accumulated stat (for corrections on completed games)
+// ══════════════════════════════════════════════════════════════════════════════
+// TAB: TEAMS
+// ══════════════════════════════════════════════════════════════════════════════
+function TeamsTab({ state, setState, isAdmin, saveNow }){
+  const allTeams = [...state.teams.A, ...state.teams.B];
+  const [selectedTeam, setSelectedTeam] = useState(allTeams[0]?.id || "");
+
+  const team = allTeams.find(t=>t.id===selectedTeam);
+  if(!team) return null;
+
+  const accentColor = "#f97316";
+
+  // ── Admin functions ────────────────────────────────────────────────────────
   function adjustStat(playerKey, field, delta){
     setState(prev=>{
-      const ps={...prev.playerStats};
-      if(!ps[playerKey]) ps[playerKey]={pts:0,reb:0,ast:0,fouls:0,threes:0,games:0,name:""};
-      const cur=ps[playerKey][field]||0;
-      ps[playerKey]={...ps[playerKey],[field]:Math.max(0,cur+delta)};
-      return {...prev,playerStats:ps,version:Date.now()};
+      const ps = {...prev.playerStats};
+      if(!ps[playerKey]) ps[playerKey] = {pts:0,reb:0,ast:0,fouls:0,threes:0,games:0,name:""};
+      ps[playerKey] = {...ps[playerKey], [field]: Math.max(0,(ps[playerKey][field]||0)+delta)};
+      const next = {...prev, playerStats:ps, version:Date.now()};
+      if(saveNow) setTimeout(()=>saveNow(next), 50);
+      return next;
     });
   }
-  // Rename a player in the roster AND in playerStats
-  function renamePlayer(teamId, playerIndex, newName){
+
+  function renamePlayer(teamId, playerIdx, newName){
     const trimmed = (newName||"").trim();
     if(!trimmed) return;
     setState(prev=>{
-      // Update roster
       const teams = {...prev.teams};
       let oldName = "";
       Object.keys(teams).forEach(grp=>{
         teams[grp] = teams[grp].map(t=>{
           if(t.id!==teamId) return t;
-          oldName = t.players[playerIndex]||"";
+          oldName = t.players[playerIdx]||"";
           const players = [...t.players];
-          players[playerIndex] = trimmed;
+          players[playerIdx] = trimmed;
           return {...t, players};
         });
       });
-      // Update name in playerStats
       const ps = {...prev.playerStats};
-      const key = `${teamId}:${playerIndex}`;
+      const key = teamId+":"+playerIdx;
       if(ps[key]) ps[key] = {...ps[key], name:trimmed};
-      // Update name in mvpHistory
       const mvpHistory = (prev.mvpHistory||[]).map(m=>
         m.name===oldName && m.teamId===teamId ? {...m, name:trimmed} : m
       );
@@ -1564,7 +1601,6 @@ function TeamsTab({ state, setState, isAdmin, saveNow }) {
     });
   }
 
-  // Add a new player to a team's roster (for last-minute additions)
   function addPlayerToTeam(teamId, name){
     const trimmed = (name||"").trim();
     if(!trimmed) return;
@@ -1577,82 +1613,73 @@ function TeamsTab({ state, setState, isAdmin, saveNow }) {
         });
       });
       const next = {...prev, teams, version:Date.now()};
-      // Save immediately so Firebase listener doesn't overwrite
       if(saveNow) setTimeout(()=>saveNow(next), 50);
       return next;
     });
   }
-  // Remove a player from roster (in case of mistake)
-  function removePlayerFromTeam(teamId, playerIndex){
-    if(!window.confirm("Αφαίρεση παίκτη από τη λίστα;")) return;
+
+  function removePlayerFromTeam(teamId, playerIdx){
+    if(!window.confirm("Αφαίρεση παίκτη;")) return;
     setState(prev=>{
       const teams = {...prev.teams};
       Object.keys(teams).forEach(grp=>{
         teams[grp] = teams[grp].map(t=>{
           if(t.id!==teamId) return t;
-          return {...t, players:t.players.filter((_,i)=>i!==playerIndex)};
+          return {...t, players:t.players.filter((_,i)=>i!==playerIdx)};
         });
       });
-      return {...prev, teams, version:Date.now()};
+      const next = {...prev, teams, version:Date.now()};
+      if(saveNow) setTimeout(()=>saveNow(next), 50);
+      return next;
     });
   }
-  const allTeams = [...state.teams.A, ...state.teams.B];
-  const [selectedTeam, setSelectedTeam] = useState(allTeams[0]?.id || "");
 
-  const team = allTeams.find(t=>t.id===selectedTeam);
-  if(!team) return null;
+  // ── Standings position ─────────────────────────────────────────────────────
+  const matches = state.matchesA;
+  const st = {};
+  allTeams.forEach(t=>{ st[t.id]={id:t.id,W:0,L:0,pts:0}; });
+  matches.forEach(m=>{
+    if(!m.done) return;
+    const h=parseInt(m.hs), a=parseInt(m.as);
+    if(h>a){ st[m.home].W++; st[m.home].pts+=2; st[m.away].L++; st[m.away].pts+=1; }
+    else { st[m.away].W++; st[m.away].pts+=2; st[m.home].L++; st[m.home].pts+=1; }
+  });
+  const standPos = Object.values(st).sort((a,b)=>b.pts-a.pts).findIndex(t=>t.id===selectedTeam)+1;
 
-  const isGroupA = team.group === "A";
-  const accentColor = isGroupA ? "#f97316" : "#3b82f6";
-
-  // Get standings for this team
-  const matches = isGroupA ? state.matchesA : state.matchesB;
-  const teamList = isGroupA ? state.teams.A : state.teams.B;
-  const stand = (() => {
-    const st = {};
-    teamList.forEach(t=>st[t.id]={W:0,L:0,PF:0,PA:0,pts:0});
-    matches.forEach(m=>{
-      if(!m.done) return;
-      const h=parseInt(m.hs), a=parseInt(m.as);
-      st[m.home].PF+=h; st[m.home].PA+=a;
-      st[m.away].PF+=a; st[m.away].PA+=h;
-      if(h>a){st[m.home].W++;st[m.home].pts+=2;st[m.away].L++;st[m.away].pts+=1;}
-      else{st[m.away].W++;st[m.away].pts+=2;st[m.home].L++;st[m.home].pts+=1;}
-    });
-    return Object.values(st).sort((a,b)=>b.pts-a.pts).findIndex(t=>t.id===selectedTeam)+1;
-  })();
-
-  // Get player stats for this team (keep originalIdx for correct renaming)
-  const playerStats = team.players.map((name, originalIdx) => {
-    const key = `${team.id}:${originalIdx}`;
+  // ── Player stats (keep original index for correct editing) ─────────────────
+  const playerRows = team.players.map((name, originalIdx)=>{
+    const key = team.id+":"+originalIdx;
     const s = state.playerStats[key] || {pts:0,reb:0,ast:0,fouls:0,threes:0,games:0};
     const eff = (s.pts||0)+(s.reb||0)+(s.ast||0)-(s.fouls||0);
-    return { name, ...s, key, originalIdx, eff,
+    return {
+      name, key, originalIdx, eff,
+      pts:s.pts||0, reb:s.reb||0, ast:s.ast||0,
+      fouls:s.fouls||0, threes:s.threes||0, games:s.games||0,
       ppg: s.games ? (s.pts/s.games).toFixed(1) : "—",
       rpg: s.games ? (s.reb/s.games).toFixed(1) : "—",
-      apg: s.games ? (s.ast/s.games).toFixed(1) : "—" };
+      apg: s.games ? (s.ast/s.games).toFixed(1) : "—",
+    };
   }).sort((a,b)=>b.pts-a.pts);
 
-  // Team games
+  // ── Team results ───────────────────────────────────────────────────────────
   const teamMatches = matches.filter(m=>m.home===selectedTeam||m.away===selectedTeam);
-  const won = teamMatches.filter(m=>m.done&&((m.home===selectedTeam&&parseInt(m.hs)>parseInt(m.as))||(m.away===selectedTeam&&parseInt(m.as)>parseInt(m.hs)))).length;
+  const won  = teamMatches.filter(m=>m.done&&((m.home===selectedTeam&&parseInt(m.hs)>parseInt(m.as))||(m.away===selectedTeam&&parseInt(m.as)>parseInt(m.hs)))).length;
   const lost = teamMatches.filter(m=>m.done&&((m.home===selectedTeam&&parseInt(m.hs)<parseInt(m.as))||(m.away===selectedTeam&&parseInt(m.as)<parseInt(m.hs)))).length;
-  const pf = teamMatches.filter(m=>m.done).reduce((s,m)=>s+(m.home===selectedTeam?parseInt(m.hs):parseInt(m.as)),0);
-  const pa = teamMatches.filter(m=>m.done).reduce((s,m)=>s+(m.home===selectedTeam?parseInt(m.as):parseInt(m.hs)),0);
+  const pf   = teamMatches.filter(m=>m.done).reduce((s,m)=>s+(m.home===selectedTeam?parseInt(m.hs):parseInt(m.as)),0);
+  const pa   = teamMatches.filter(m=>m.done).reduce((s,m)=>s+(m.home===selectedTeam?parseInt(m.as):parseInt(m.hs)),0);
 
   return (
     <div className="teams-layout" style={{ display:"grid", gridTemplateColumns:"240px 1fr", gap:20 }}>
-      {/* Team list sidebar */}
+
+      {/* Sidebar */}
       <div>
         <div style={{ fontSize:11, color:"#475569", fontWeight:700, letterSpacing:2, marginBottom:10 }}>ΟΜΑΔΕΣ ({allTeams.length})</div>
         {allTeams.map(t=>(
           <button key={t.id} onClick={()=>setSelectedTeam(t.id)} style={{
             width:"100%", display:"flex", alignItems:"center", gap:10,
-            padding:"10px 12px", borderRadius:10, border:"none", cursor:"pointer",
-            marginBottom:4,
-            background: selectedTeam===t.id ? `${t.color}22` : "#111827",
-            borderLeft: selectedTeam===t.id ? `3px solid ${t.color}` : "3px solid transparent",
-            transition:"all 0.15s",
+            padding:"10px 12px", borderRadius:10, border:"none", cursor:"pointer", marginBottom:4,
+            background: selectedTeam===t.id ? accentColor+"22" : "#111827",
+            borderLeft: selectedTeam===t.id ? "3px solid "+accentColor : "3px solid transparent",
           }}>
             <TeamLogo teamId={t.id} size={32}/>
             <span style={{ fontSize:13, fontWeight:selectedTeam===t.id?700:400, color:selectedTeam===t.id?"#f1f5f9":"#64748b", textAlign:"left", lineHeight:1.2 }}>{t.name}</span>
@@ -1660,139 +1687,137 @@ function TeamsTab({ state, setState, isAdmin, saveNow }) {
         ))}
       </div>
 
-      {/* Team detail */}
+      {/* Detail */}
       <div>
+
         {/* Hero */}
-        <div style={{ background:`linear-gradient(135deg, ${accentColor}18, #0d1220)`, border:`1px solid ${accentColor}44`, borderRadius:16, padding:28, marginBottom:20, display:"flex", alignItems:"center", gap:24 }}>
-          <TeamLogo teamId={team.id} size={100} style={{ borderRadius:"50%", border:`3px solid ${accentColor}`, boxShadow:`0 0 30px ${accentColor}44` }}/>
+        <div style={{ background:"linear-gradient(135deg, "+accentColor+"18, #0d1220)", border:"1px solid "+accentColor+"44", borderRadius:16, padding:28, marginBottom:20, display:"flex", alignItems:"center", gap:24 }}>
+          <TeamLogo teamId={team.id} size={100} style={{ borderRadius:"50%", border:"3px solid "+accentColor, boxShadow:"0 0 30px "+accentColor+"44" }}/>
           <div style={{ flex:1 }}>
             <div style={{ fontSize:11, letterSpacing:3, color:accentColor, fontWeight:700, marginBottom:6 }}>4CRETE SUMMER LEAGUE</div>
             <div style={{ fontSize:28, fontWeight:900, color:"#f1f5f9", marginBottom:12 }}>{team.name}</div>
             <div style={{ display:"flex", gap:20 }}>
-              {[{v:won,l:"Νίκες",c:"#22c55e"},{v:lost,l:"Ήττες",c:"#ef4444"},{v:won*2+lost,l:"Βαθμοί",c:accentColor},{v:pf,l:"Πόντοι Υπέρ",c:"#60a5fa"},{v:pa,l:"Πόντοι Κατά",c:"#f87171"},{v:`${stand||"—"}η`,l:"Θέση",c:"#fbbf24"}].map(({v,l,c})=>(
-                <div key={l} style={{ textAlign:"center" }}>
-                  <div style={{ fontSize:24, fontWeight:900, color:c }}>{v}</div>
-                  <div style={{ fontSize:11, color:"#64748b", fontWeight:700 }}>{l}</div>
-                </div>
-              ))}
+              {[{v:won,l:"Νίκες",c:"#22c55e"},{v:lost,l:"Ήττες",c:"#ef4444"},{v:won*2+lost,l:"Βαθμοί",c:accentColor},{v:pf,l:"Υπέρ",c:"#60a5fa"},{v:pa,l:"Κατά",c:"#f87171"},{v:(standPos||"—")+"η",l:"Θέση",c:"#fbbf24"}].map(function(x){
+                return (
+                  <div key={x.l} style={{ textAlign:"center" }}>
+                    <div style={{ fontSize:22, fontWeight:900, color:x.c }}>{x.v}</div>
+                    <div style={{ fontSize:11, color:"#64748b", fontWeight:700 }}>{x.l}</div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
 
-        {/* Player stats table */}
+        {/* Player table */}
         <div style={{ ...S.card, marginBottom:20 }}>
-          <div style={{ ...S.cardHeader, borderLeft:`3px solid ${accentColor}` }}>
+          <div style={{ ...S.cardHeader, borderLeft:"3px solid "+accentColor }}>
             <span style={{ fontWeight:800, fontSize:15 }}>Παίκτες & Στατιστικά</span>
             <span style={{ fontSize:12, color:"#475569" }}>{team.players.length} παίκτες</span>
           </div>
-          {playerStats.length === 0 && isAdmin && (
-            <div style={{ padding:"16px 20px", color:"#64748b", fontSize:13 }}>
-              Δεν υπάρχουν παίκτες ακόμα. Προσθέσ τους παρακάτω.
-            </div>
-          )}
-          {playerStats.length > 0 && (
-          <table style={S.table}>
-            <thead>
-              <tr style={{ background:"#0d1220" }}>
-                <th style={S.th}>ΠΑΙΚΤΗΣ</th>
-                <th style={{ ...S.th, textAlign:"center" }}>GP</th>
-                <th style={{ ...S.th, textAlign:"center", color:accentColor }}>ΠΤΣ</th>
-                <th style={{ ...S.th, textAlign:"center" }}>REB</th>
-                <th style={{ ...S.th, textAlign:"center" }}>AST</th>
-                <th style={{ ...S.th, textAlign:"center", color:accentColor }}>PPG</th>
-                <th style={{ ...S.th, textAlign:"center" }}>RPG</th>
-                <th style={{ ...S.th, textAlign:"center" }}>APG</th>
-                <th style={{ ...S.th, textAlign:"center" }}>FL</th>
-                <th style={{ ...S.th, textAlign:"center", color:"#a855f7" }}>3PT</th>
-                <th style={{ ...S.th, textAlign:"center", color:"#fbbf24" }}>EFF</th>
-                {isAdmin && <th style={{ ...S.th, textAlign:"center" }}>Διόρθωση</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {playerStats.map((p,i)=>(
-                <tr key={p.key} style={{ background:i===0?`${accentColor}11`:i%2===0?"#0d1220":"transparent" }}>
-                  <td style={{ ...S.td, fontWeight:600, color:"#f1f5f9" }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                      {i===0 && <span style={{ fontSize:16 }}>⭐</span>}
-                      {isAdmin
-                        ? <EditableName name={p.name} onSave={n=>renamePlayer(team.id, p.originalIdx, n)}/>
-                        : p.name}
-                    </div>
-                  </td>
-                  <td style={{ ...S.td, textAlign:"center", color:"#64748b" }}>{p.games||0}</td>
-                  <td style={{ ...S.td, textAlign:"center", fontWeight:700, fontSize:16, color:"#f1f5f9" }}>{p.pts}</td>
-                  <td style={{ ...S.td, textAlign:"center", color:"#94a3b8" }}>{p.reb}</td>
-                  <td style={{ ...S.td, textAlign:"center", color:"#94a3b8" }}>{p.ast}</td>
-                  <td style={{ ...S.td, textAlign:"center", fontWeight:700, color:accentColor }}>{p.ppg}</td>
-                  <td style={{ ...S.td, textAlign:"center", color:"#94a3b8" }}>{p.rpg}</td>
-                  <td style={{ ...S.td, textAlign:"center", color:"#94a3b8" }}>{p.apg}</td>
-                  <td style={{ ...S.td, textAlign:"center", color:p.fouls>=5?"#ef4444":"#64748b" }}>{p.fouls}</td>
-                  <td style={{ ...S.td, textAlign:"center", color:"#a855f7", fontWeight:600 }}>{p.threes||0}</td>
-                  <td style={{ ...S.td, textAlign:"center", fontWeight:700, color:"#fbbf24" }}>{p.eff}</td>
-                  {isAdmin && (
-                    <td style={{ ...S.td, textAlign:"center" }}>
-                      <div style={{ display:"flex", gap:3, justifyContent:"center", flexWrap:"wrap" }}>
-                        {[["pts","ΠΤ"],["reb","RB"],["ast","AS"],["fouls","ΦΛ"],["threes","3Π"],["games","GP"]].map(([f,lbl])=>(
-                          <span key={f} style={{ display:"inline-flex", borderRadius:5, overflow:"hidden", border:"1px solid #2d3f5a" }}>
-                            <button onClick={()=>adjustStat(p.key, f, -1)} style={{ background:"#0d1220", border:"none", color:"#ef4444", fontSize:11, fontWeight:700, padding:"2px 5px", cursor:"pointer" }}>−</button>
-                            <span style={{ fontSize:10, color:"#64748b", padding:"2px 4px", background:"#111827", alignSelf:"center" }}>{lbl}</span>
-                            <button onClick={()=>adjustStat(p.key, f, 1)} style={{ background:"#1e2d45", border:"none", color:"#22c55e", fontSize:11, fontWeight:700, padding:"2px 5px", cursor:"pointer" }}>+</button>
-                          </span>
-                        ))}
-                        <button onClick={()=>removePlayerFromTeam(team.id, p.originalIdx)} style={{ background:"#1a0505", border:"1px solid #ef444433", borderRadius:5, color:"#ef4444", fontSize:11, fontWeight:700, padding:"2px 7px", cursor:"pointer" }} title="Αφαίρεση παίκτη από τη λίστα">✕</button>
-                      </div>
-                    </td>
-                  )}
+          <div style={{ overflowX:"auto" }}>
+            <table style={S.table}>
+              <thead>
+                <tr style={{ background:"#0d1220" }}>
+                  <th style={S.th}>ΠΑΙΚΤΗΣ</th>
+                  <th style={{ ...S.th, textAlign:"center" }}>GP</th>
+                  <th style={{ ...S.th, textAlign:"center", color:accentColor }}>ΠΤΣ</th>
+                  <th style={{ ...S.th, textAlign:"center" }}>REB</th>
+                  <th style={{ ...S.th, textAlign:"center" }}>AST</th>
+                  <th style={{ ...S.th, textAlign:"center", color:accentColor }}>PPG</th>
+                  <th style={{ ...S.th, textAlign:"center" }}>RPG</th>
+                  <th style={{ ...S.th, textAlign:"center" }}>APG</th>
+                  <th style={{ ...S.th, textAlign:"center" }}>FL</th>
+                  <th style={{ ...S.th, textAlign:"center", color:"#a855f7" }}>3PT</th>
+                  <th style={{ ...S.th, textAlign:"center", color:"#fbbf24" }}>EFF</th>
+                  {isAdmin && <th style={{ ...S.th, textAlign:"center" }}>Διόρθωση</th>}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          )}
-          {isAdmin && <AddPlayerRow key={`add-${team.id}`} teamId={team.id} accentColor={accentColor} onAdd={addPlayerToTeam}/>}
+              </thead>
+              <tbody>
+                {playerRows.map(function(p, rowIdx){
+                  return (
+                    <tr key={p.key} style={{ background:rowIdx===0?accentColor+"11":rowIdx%2===0?"#0d1220":"transparent" }}>
+                      <td style={{ ...S.td, fontWeight:600, color:"#f1f5f9" }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                          {rowIdx===0 && <span style={{ fontSize:16 }}>⭐</span>}
+                          {isAdmin
+                            ? <EditableName name={p.name} onSave={function(n){ renamePlayer(team.id, p.originalIdx, n); }}/>
+                            : p.name}
+                        </div>
+                      </td>
+                      <td style={{ ...S.td, textAlign:"center", color:"#64748b" }}>{p.games}</td>
+                      <td style={{ ...S.td, textAlign:"center", fontWeight:700, fontSize:16, color:"#f1f5f9" }}>{p.pts}</td>
+                      <td style={{ ...S.td, textAlign:"center", color:"#94a3b8" }}>{p.reb}</td>
+                      <td style={{ ...S.td, textAlign:"center", color:"#94a3b8" }}>{p.ast}</td>
+                      <td style={{ ...S.td, textAlign:"center", fontWeight:700, color:accentColor }}>{p.ppg}</td>
+                      <td style={{ ...S.td, textAlign:"center", color:"#94a3b8" }}>{p.rpg}</td>
+                      <td style={{ ...S.td, textAlign:"center", color:"#94a3b8" }}>{p.apg}</td>
+                      <td style={{ ...S.td, textAlign:"center", color:p.fouls>=5?"#ef4444":"#64748b" }}>{p.fouls}</td>
+                      <td style={{ ...S.td, textAlign:"center", color:"#a855f7", fontWeight:600 }}>{p.threes}</td>
+                      <td style={{ ...S.td, textAlign:"center", fontWeight:700, color:"#fbbf24" }}>{p.eff}</td>
+                      {isAdmin && (
+                        <td style={{ ...S.td, textAlign:"center" }}>
+                          <div style={{ display:"flex", gap:3, justifyContent:"center", flexWrap:"wrap" }}>
+                            {[["pts","ΠΤ"],["reb","RB"],["ast","AS"],["fouls","ΦΛ"],["threes","3Π"],["games","GP"]].map(function(pair){
+                              var f=pair[0], lbl=pair[1];
+                              return (
+                                <span key={f} style={{ display:"inline-flex", borderRadius:5, overflow:"hidden", border:"1px solid #2d3f5a" }}>
+                                  <button onClick={function(){ adjustStat(p.key, f, -1); }} style={{ background:"#0d1220", border:"none", color:"#ef4444", fontSize:11, fontWeight:700, padding:"2px 5px", cursor:"pointer" }}>−</button>
+                                  <span style={{ fontSize:10, color:"#64748b", padding:"2px 4px", background:"#111827", alignSelf:"center" }}>{lbl}</span>
+                                  <button onClick={function(){ adjustStat(p.key, f, 1); }} style={{ background:"#1e2d45", border:"none", color:"#22c55e", fontSize:11, fontWeight:700, padding:"2px 5px", cursor:"pointer" }}>+</button>
+                                </span>
+                              );
+                            })}
+                            <button onClick={function(){ removePlayerFromTeam(team.id, p.originalIdx); }} style={{ background:"#1a0505", border:"1px solid #ef444433", borderRadius:5, color:"#ef4444", fontSize:11, fontWeight:700, padding:"2px 7px", cursor:"pointer" }}>✕</button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {isAdmin && <AddPlayerRow teamId={team.id} accentColor={accentColor} onAdd={addPlayerToTeam}/>}
         </div>
 
-        {/* Team game results */}
+        {/* Results */}
         <div style={S.card}>
-          <div style={{ ...S.cardHeader, borderLeft:`3px solid ${accentColor}` }}>
+          <div style={{ ...S.cardHeader, borderLeft:"3px solid "+accentColor }}>
             <span style={{ fontWeight:800, fontSize:15 }}>Αποτελέσματα Αγώνων</span>
           </div>
           <div style={{ padding:"12px 16px" }}>
-            {teamMatches.length === 0 && <div style={{ color:"#475569", padding:20, textAlign:"center" }}>Δεν έχουν παιχτεί αγώνες ακόμα</div>}
-            {teamMatches.map((m,i)=>{
-              const isHome = m.home===selectedTeam;
-              const oppId = isHome ? m.away : m.home;
-              const opp = allTeams.find(t=>t.id===oppId);
-              const myScore = m.done ? (isHome ? parseInt(m.hs) : parseInt(m.as)) : null;
-              const oppScore = m.done ? (isHome ? parseInt(m.as) : parseInt(m.hs)) : null;
-              const won = m.done && myScore > oppScore;
+            {teamMatches.length === 0 && <div style={{ color:"#475569", padding:20, textAlign:"center" }}>Δεν υπάρχουν αγώνες ακόμα</div>}
+            {teamMatches.map(function(m, mi){
+              var isHome = m.home===selectedTeam;
+              var oppId = isHome ? m.away : m.home;
+              var opp = allTeams.find(function(t){ return t.id===oppId; });
+              var myScore = m.done ? (isHome ? parseInt(m.hs) : parseInt(m.as)) : null;
+              var oppScore = m.done ? (isHome ? parseInt(m.as) : parseInt(m.hs)) : null;
+              var w = m.done && myScore > oppScore;
               return (
-                <div key={m.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"10px 8px", borderRadius:8, marginBottom:6, background: m.done?(won?"#0a1a0f":"#1a0505"):"#0d1220", border:`1px solid ${m.done?(won?"#22c55e33":"#ef444433"):"#1e2d45"}` }}>
-                  {m.done && <span style={{ fontSize:16 }}>{won?"✅":"❌"}</span>}
+                <div key={m.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"10px 8px", borderRadius:8, marginBottom:6, background:m.done?(w?"#0a1a0f":"#1a0505"):"#0d1220", border:"1px solid "+(m.done?(w?"#22c55e33":"#ef444433"):"#1e2d45") }}>
+                  {m.done && <span style={{ fontSize:16 }}>{w?"✅":"❌"}</span>}
                   {!m.done && <span style={{ fontSize:14, color:"#475569" }}>—</span>}
                   <div style={{ display:"flex", alignItems:"center", gap:6, flex:1 }}>
                     <TeamLogo teamId={oppId} size={28}/>
-                    <span style={{ fontSize:13, color:"#94a3b8" }}>{opp?.name}</span>
+                    <span style={{ fontSize:13, color:"#94a3b8" }}>{opp ? opp.name : ""}</span>
                   </div>
-                  {m.done ? (
-                    <span style={{ fontWeight:900, fontSize:16, color:won?"#22c55e":"#ef4444" }}>
-                      {myScore} – {oppScore}
-                    </span>
-                  ) : (
-                    <span style={{ fontSize:12, color:"#475569" }}>Εκκρεμεί</span>
-                  )}
+                  {m.done
+                    ? <span style={{ fontWeight:900, fontSize:16, color:w?"#22c55e":"#ef4444" }}>{myScore} – {oppScore}</span>
+                    : <span style={{ fontSize:12, color:"#475569" }}>Εκκρεμεί</span>}
                 </div>
               );
             })}
           </div>
         </div>
+
       </div>
     </div>
   );
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// TAB: DISPLAY (TV Fullscreen Scoreboard)
-// ══════════════════════════════════════════════════════════════════════════════
+
 function DisplayTab({ state }) {
   const allTeams = [...state.teams.A, ...state.teams.B];
   const [courtNum, setCourtNum] = useState(1);
@@ -2118,6 +2143,47 @@ export default function App() {
     saveTimers.current.shared = setTimeout(()=>saveShared(shared, newVer), 500);
   },[state.teams, state.matchesA, state.matchesB, state.playoffs, state.playerStats, state.mvpHistory]);
 
+  // handleMigration: migrate old Firebase data to new 10-team structure
+  async function handleMigration(){
+    const msg = "SMART MIGRATION
+
+Θα διατηρηθουν:
+- Στατιστικα παικτων
+- MVP ιστορικο
+- Αποτελεσματα αγωνων
+
+Θα ανανεωθουν:
+- Λιστα ομαδων (10 σωστες)
+- Προγραμμα αγωνων (νεο)
+
+Προχωραμε;";
+    if(!window.confirm(msg)) return;
+    try {
+      const fresh = defaultState();
+      fresh.playerStats = state.playerStats || {};
+      fresh.mvpHistory  = state.mvpHistory  || [];
+      const oldMatches = [...(state.matchesA||[]),...(state.matchesB||[])].filter(m=>m.done);
+      fresh.matchesA = fresh.matchesA.map(function(nm){
+        const old = oldMatches.find(function(om){
+          return (om.home===nm.home&&om.away===nm.away)||(om.home===nm.away&&om.away===nm.home);
+        });
+        if(!old) return nm;
+        const sameDir = old.home===nm.home;
+        return {...nm, hs:sameDir?old.hs:old.as, as:sameDir?old.as:old.hs, done:true};
+      });
+      const courts = fresh.courts;
+      const shared = {...fresh}; delete shared.courts;
+      await setDoc(DOC_REF, {
+        shared: JSON.stringify(shared), shared_v: Date.now(),
+        court1: JSON.stringify(courts[1]), court1_v: Date.now(),
+        court2: JSON.stringify(courts[2]), court2_v: Date.now(),
+        data: null,
+      });
+      setState(fresh);
+      alert("Migration OK! Ανανεωσε τη σελιδα.");
+    } catch(e){ alert("Σφαλμα: " + e.message); }
+  }
+
   // saveNow: immediately write the given state to Firebase (bypasses debounce)
   // Used when TeamsTab makes roster changes that need instant persistence.
   function saveNow(nextState){
@@ -2229,67 +2295,7 @@ export default function App() {
             </div>
             {isAdmin ? (
               <button onClick={()=>setIsAdmin(false)} style={{ ...S.btnGhost, color:"#f97316", borderColor:"#f9731633" }}>🔓 Admin</button>
-              <button onClick={async()=>{
-                if(!window.confirm(
-                  "SMART MIGRATION\n\n" +
-                  "Θα διατηρηθούν:\n" +
-                  "✅ Στατιστικά παικτών\n" +
-                  "✅ MVP ιστορικό\n" +
-                  "✅ Αποτελέσματα αγώνων\n\n" +
-                  "Θα ανανεωθούν:\n" +
-                  "🔄 Λίστα ομάδων (10 σωστές)\n" +
-                  "🔄 Πρόγραμμα αγώνων (νέο)\n\n" +
-                  "Προχωράμε;"
-                )) return;
-                try {
-                  // Build migrated state
-                  const fresh = defaultState();
-                  const cur = state;
-
-                  // 1. Keep playerStats and mvpHistory
-                  fresh.playerStats = cur.playerStats || {};
-                  fresh.mvpHistory  = cur.mvpHistory  || [];
-
-                  // 2. Transfer completed match results to new schedule
-                  // Collect all done matches from old data
-                  const oldMatches = [
-                    ...(cur.matchesA||[]),
-                    ...(cur.matchesB||[]),
-                  ].filter(m=>m.done);
-
-                  // For each done old match, find its counterpart in new schedule
-                  fresh.matchesA = fresh.matchesA.map(nm=>{
-                    const old = oldMatches.find(om=>
-                      (om.home===nm.home&&om.away===nm.away)||
-                      (om.home===nm.away&&om.away===nm.home)
-                    );
-                    if(!old) return nm;
-                    // Orient score correctly (home/away may be swapped)
-                    const sameOrientation = old.home===nm.home;
-                    return {
-                      ...nm,
-                      hs: sameOrientation ? old.hs : old.as,
-                      as: sameOrientation ? old.as : old.hs,
-                      done: true,
-                    };
-                  });
-
-                  // 3. Save to Firebase
-                  const {courts, ...shared} = fresh;
-                  await setDoc(DOC_REF, {
-                    shared: JSON.stringify(shared),
-                    shared_v: Date.now(),
-                    court1: JSON.stringify(courts[1]),
-                    court1_v: Date.now(),
-                    court2: JSON.stringify(courts[2]),
-                    court2_v: Date.now(),
-                    data: null,
-                  });
-
-                  setState(fresh);
-                  alert("✅ Migration ολοκληρώθηκε!\nΟι νέες ομάδες φορτώθηκαν και τα δεδομένα σου διατηρήθηκαν.\nΑνανέωσε τη σελίδα.");
-                } catch(e){ alert("Σφάλμα: " + e.message); }
-              }} style={{ ...S.btnGhost, color:"#f59e0b", borderColor:"#f59e0b33", fontSize:11 }} title="Ενημέρωση ομάδων — διατηρεί στατιστικά">🔄 Migration</button>
+              <button onClick={handleMigration} style={{ ...S.btnGhost, color:"#f59e0b", borderColor:"#f59e0b33", fontSize:11 }} title="Ενημέρωση ομάδων">🔄 Migration</button>
             ) : (
               <button onClick={()=>setShowPin(true)} style={S.btnSecondary}>🔒 <span className="admin-btn-text">Σύνδεση Admin</span></button>
             )}
