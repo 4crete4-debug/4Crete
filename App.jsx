@@ -1310,7 +1310,7 @@ function MVPTab({ state, setState, isAdmin }) {
         apg: games>0 ? (s.ast/games).toFixed(1) : "0.0",
       };
     })
-  ).filter(r=>r.games>0).sort((a,b)=>parseFloat(b.effPG)-parseFloat(a.effPG)||b.eff-a.eff);
+  ).sort((a,b)=>parseFloat(b.effPG)-parseFloat(a.effPG)||b.eff-a.eff);
 
   const mvp = rows[0];
 
