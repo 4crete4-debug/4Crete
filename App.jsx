@@ -1158,12 +1158,15 @@ function CourtPanel({ courtNum, court: rawCourt, allTeams, state, setState, isAd
 function StatsTab({ state }) {
   const allTeams = [...state.teams.A, ...state.teams.B];
 
-  const allRows = Object.entries(state.playerStats).map(([key,s])=>{
-    const [teamId]=key.split(":");
-    const team=allTeams.find(t=>t.id===teamId);
-    const eff = s.pts + s.reb + s.ast - (s.fouls||0);
-    return {...s, key, teamId, teamName:team?.name||"?", teamColor:team?.color||"#888", eff};
-  });
+  // Build rows from ALL players in roster (not just those with recorded stats)
+  const allRows = allTeams.flatMap(team=>
+    team.players.map((name, i)=>{
+      const key = team.id+":"+i;
+      const s = state.playerStats[key] || {pts:0,reb:0,ast:0,fouls:0,threes:0,games:0};
+      const eff = (s.pts||0)+(s.reb||0)+(s.ast||0)-(s.fouls||0);
+      return {...s, key, name: s.name||name, teamId:team.id, teamName:team.name, teamColor:team.color||"#f97316", eff};
+    })
+  );
 
   if(!allRows.length) return (
     <div style={{ textAlign:"center", padding:80, color:"#475569" }}>
@@ -1290,22 +1293,24 @@ function MVPTab({ state, setState, isAdmin }) {
   // Since we store totals, we track mvpHistory separately in state
   // For now, show overall EFF leaders + overall tournament MVP
 
-  const rows = Object.entries(state.playerStats).map(([key,s])=>{
-    const [teamId]=key.split(":");
-    const team=allTeams.find(t=>t.id===teamId);
-    const games = s.games||1;
-    const eff = s.pts + s.reb + s.ast - s.fouls;
-    const effPG = (eff/games).toFixed(1);
-    return {
-      ...s, key, teamId,
-      teamName: team?.name||"?",
-      teamColor: team?.color||"#888",
-      eff, effPG,
-      ppg: (s.pts/games).toFixed(1),
-      rpg: (s.reb/games).toFixed(1),
-      apg: (s.ast/games).toFixed(1),
-    };
-  }).sort((a,b)=>parseFloat(b.effPG)-parseFloat(a.effPG)||b.eff-a.eff);
+  // Build from ALL roster players
+  const rows = allTeams.flatMap(team=>
+    team.players.map((name, i)=>{
+      const key = team.id+":"+i;
+      const s = state.playerStats[key] || {pts:0,reb:0,ast:0,fouls:0,threes:0,games:0};
+      const games = s.games||0;
+      const eff = (s.pts||0)+(s.reb||0)+(s.ast||0)-(s.fouls||0);
+      const effPG = games>0 ? (eff/games).toFixed(1) : "0.0";
+      return {
+        ...s, key, name: s.name||name, teamId:team.id,
+        teamName: team.name, teamColor: team.color||"#f97316",
+        eff, effPG, games,
+        ppg: games>0 ? (s.pts/games).toFixed(1) : "0.0",
+        rpg: games>0 ? (s.reb/games).toFixed(1) : "0.0",
+        apg: games>0 ? (s.ast/games).toFixed(1) : "0.0",
+      };
+    })
+  ).filter(r=>r.games>0).sort((a,b)=>parseFloat(b.effPG)-parseFloat(a.effPG)||b.eff-a.eff);
 
   const mvp = rows[0];
 
@@ -1373,7 +1378,7 @@ function MVPTab({ state, setState, isAdmin }) {
           <div style={{ display:"flex", gap:28 }}>
             {[{v:mvp.effPG,l:"EFF/G",c:"#fbbf24"},{v:mvp.ppg,l:"PPG",c:"#f97316"},{v:mvp.rpg,l:"RPG",c:"#3b82f6"},{v:mvp.apg,l:"APG",c:"#22c55e"}].map(({v,l,c})=>(
               <div key={l} style={{ textAlign:"center" }}>
-                <div style={{ fontSize:36, fontWeight:900, color:c }}>{v}</div>
+                <div className="hero-stat" style={{ fontSize:36, fontWeight:900, color:c }}>{v}</div>
                 <div style={{ fontSize:12, color:"#94a3b8", fontWeight:700 }}>{l}</div>
               </div>
             ))}
