@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react"; 
+import { useState, useEffect, useRef } from "react";
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc } from "firebase/firestore";
 
@@ -1063,7 +1063,7 @@ function CourtPanel({ courtNum, court: rawCourt, allTeams, state, setState, isAd
               {[0,1,2].map(i=>(
                 <span key={i} style={{width:14,height:14,borderRadius:3,background:i<court.teamA.timeouts?"#f97316":"#1e2d45",display:"inline-block"}}/>
               ))}
-              {isAdmin&&court.teamA.timeouts>0&&<button onClick={()=>timeout("teamA")} style={{...S.btnGhost,marginLeft:4,padding:"2px 10px",fontSize:11,color:"#f97316",borderColor:"#f9731633"}}>TO 45"</button>}
+              {isAdmin&&court.teamA.timeouts>0&&<button onClick={()=>timeout("teamA")} style={{...S.btnGhost,marginLeft:4,padding:"2px 10px",fontSize:11,color:"#f97316",borderColor:"#f9731633"}}>TO 45''</button>}
             </div>
           </div>
           <div style={{textAlign:"center",minWidth:220}}>
@@ -1118,7 +1118,7 @@ function CourtPanel({ courtNum, court: rawCourt, allTeams, state, setState, isAd
               {[0,1,2].map(i=>(
                 <span key={i} style={{width:14,height:14,borderRadius:3,background:i<court.teamB.timeouts?"#3b82f6":"#1e2d45",display:"inline-block"}}/>
               ))}
-              {isAdmin&&court.teamB.timeouts>0&&<button onClick={()=>timeout("teamB")} style={{...S.btnGhost,marginLeft:4,padding:"2px 10px",fontSize:11,color:"#3b82f6",borderColor:"#3b82f633"}}>TO 45"</button>}
+              {isAdmin&&court.teamB.timeouts>0&&<button onClick={()=>timeout("teamB")} style={{...S.btnGhost,marginLeft:4,padding:"2px 10px",fontSize:11,color:"#3b82f6",borderColor:"#3b82f633"}}>TO 45''</button>}
             </div>
           </div>
         </div>
@@ -2145,18 +2145,7 @@ export default function App() {
 
   // handleMigration: migrate old Firebase data to new 10-team structure
   async function handleMigration(){
-    const msg = "SMART MIGRATION
-
-Θα διατηρηθουν:
-- Στατιστικα παικτων
-- MVP ιστορικο
-- Αποτελεσματα αγωνων
-
-Θα ανανεωθουν:
-- Λιστα ομαδων (10 σωστες)
-- Προγραμμα αγωνων (νεο)
-
-Προχωραμε;";
+    const msg = "SMART MIGRATION - Θα διατηρηθουν: Στατιστικα, MVP, Αποτελεσματα. Θα ανανεωθουν: Ομαδες, Προγραμμα. Προχωραμε;";
     if(!window.confirm(msg)) return;
     try {
       const fresh = defaultState();
