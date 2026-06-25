@@ -112,6 +112,17 @@ const LEAGUE_MATCHES = [
   {id:"44", home:"B1", away:"B3", hs:"0", as:"0", done:false, matchday:9}
 ];
 
+// ─── MATCHDAY DATES (add dates as they are confirmed) ─────────────────────────
+const MATCHDAY_DATES = {
+  1: "2026-06-19",  // Πέμπτη 19/6
+  2: "2026-06-25",  // Πέμπτη 25/6
+  // 3: "2026-07-02",  // uncomment when confirmed
+  // 4: "2026-07-09",
+  // 5, 6, 7, 8, 9 — ΥΠΟ ΑΝΑΚΟΙΝΩΣΗ
+};
+
+
+
 function defaultState() {
   return {
     teams: { ...INITIAL_TEAMS },
@@ -282,13 +293,14 @@ const S = {
 
 // ─── SIDEBAR NAV ──────────────────────────────────────────────────────────────
 const NAV_ITEMS = [
+  { key:"schedule",  icon:"📅", label:"Πρόγραμμα" },
   { key:"standings", icon:"📋", label:"Βαθμολογία" },
-  { key:"bracket",  icon:"🏆", label:"Bracket" },
-  { key:"live",     icon:"🔴", label:"Live — 2 Γήπεδα" },
-  { key:"mvp",      icon:"🏅", label:"MVP" },
-  { key:"teams",    icon:"👥", label:"Ομάδες" },
-  { key:"stats",    icon:"📊", label:"Στατιστικά" },
-  { key:"display",  icon:"📺", label:"Display / TV" },
+  { key:"bracket",   icon:"🏆", label:"Bracket" },
+  { key:"live",      icon:"🔴", label:"Live — 2 Γήπεδα" },
+  { key:"mvp",       icon:"🏅", label:"MVP" },
+  { key:"teams",     icon:"👥", label:"Ομάδες" },
+  { key:"stats",     icon:"📊", label:"Στατιστικά" },
+  { key:"display",   icon:"📺", label:"Display / TV" },
 ];
 
 function Sidebar({ tab, setTab, isAdmin, liveActive, liveCount }) {
@@ -338,6 +350,135 @@ function Sidebar({ tab, setTab, isAdmin, liveActive, liveCount }) {
 }
 
 // ─── STANDINGS TAB ────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// TAB: SCHEDULE (Επόμενη Αγωνιστική)
+// ══════════════════════════════════════════════════════════════════════════════
+function ScheduleTab({ state }) {
+  const allTeams = [...state.teams.A, ...state.teams.B];
+  const matches = state.matchesA;
+
+  // Find the next unplayed matchday
+  const maxMd = Math.max(...matches.map(m=>m.matchday||1));
+  let nextMd = null;
+  for(let md=1; md<=maxMd; md++){
+    const mdMatches = matches.filter(m=>(m.matchday||1)===md);
+    if(mdMatches.some(m=>!m.done)){
+      nextMd = md;
+      break;
+    }
+  }
+
+  // If all played, show last
+  if(!nextMd) nextMd = maxMd;
+
+  const mdMatches = matches.filter(m=>(m.matchday||1)===nextMd);
+  const dateStr = MATCHDAY_DATES[nextMd];
+  const allDone = mdMatches.every(m=>m.done);
+
+  // Format date nicely
+  function formatDate(d){
+    if(!d) return "ΥΠΟ ΑΝΑΚΟΙΝΩΣΗ";
+    const days = ["Κυριακή","Δευτέρα","Τρίτη","Τετάρτη","Πέμπτη","Παρασκευή","Σάββατο"];
+    const months = ["Ιανουαρίου","Φεβρουαρίου","Μαρτίου","Απριλίου","Μαΐου","Ιουνίου","Ιουλίου","Αυγούστου","Σεπτεμβρίου","Οκτωβρίου","Νοεμβρίου","Δεκεμβρίου"];
+    const dt = new Date(d+"T12:00:00");
+    return days[dt.getDay()]+" "+dt.getDate()+" "+months[dt.getMonth()];
+  }
+
+  return (
+    <div style={{ maxWidth:700, margin:"0 auto" }}>
+
+      {/* Header card */}
+      <div style={{ background:"linear-gradient(135deg,#1a0f00,#2d1a00)", border:"2px solid #f97316", borderRadius:16, padding:"24px 28px", marginBottom:24, textAlign:"center" }}>
+        <div style={{ fontSize:11, letterSpacing:5, color:"#f97316", fontWeight:700, marginBottom:8 }}>
+          {allDone ? "ΤΕΛΕΥΤΑΙΑ ΑΓΩΝΙΣΤΙΚΗ" : "ΕΠΟΜΕΝΗ ΑΓΩΝΙΣΤΙΚΗ"}
+        </div>
+        <div style={{ fontSize:48, fontWeight:900, color:"#fff", marginBottom:8 }}>
+          {nextMd}<span style={{ fontSize:20, color:"#f97316" }}>η</span>
+        </div>
+        <div style={{ fontSize:20, fontWeight:700, color: dateStr?"#fbbf24":"#475569" }}>
+          {formatDate(dateStr)}
+        </div>
+        {!dateStr && (
+          <div style={{ marginTop:8, fontSize:12, color:"#475569" }}>
+            Η ημερομηνία θα ανακοινωθεί σύντομα
+          </div>
+        )}
+        {allDone && (
+          <div style={{ marginTop:12, background:"#22c55e22", borderRadius:8, padding:"6px 16px", display:"inline-block" }}>
+            <span style={{ color:"#22c55e", fontWeight:700, fontSize:13 }}>✓ Ολοκληρώθηκε</span>
+          </div>
+        )}
+      </div>
+
+      {/* Match cards */}
+      <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+        {mdMatches.map((m, i)=>{
+          const ht = allTeams.find(t=>t.id===m.home);
+          const at = allTeams.find(t=>t.id===m.away);
+          const done = m.done;
+          const homeWon = done && parseInt(m.hs)>parseInt(m.as);
+          const awayWon = done && parseInt(m.as)>parseInt(m.hs);
+          return (
+            <div key={m.id} style={{
+              background: done?"#0a1a0f":"#111827",
+              border:"1px solid "+(done?"#22c55e33":"#1e2d45"),
+              borderRadius:12, padding:"18px 20px",
+            }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}>
+                {/* Home team */}
+                <div style={{ flex:1, display:"flex", alignItems:"center", gap:12, justifyContent:"flex-end" }}>
+                  <span style={{ fontSize:15, fontWeight:homeWon?800:600, color:homeWon?"#f1f5f9":"#94a3b8", textAlign:"right" }}>{ht?.name}</span>
+                  <TeamLogo teamId={m.home} size={44}/>
+                </div>
+
+                {/* Score / VS */}
+                <div style={{ textAlign:"center", minWidth:90 }}>
+                  {done ? (
+                    <div style={{ fontSize:28, fontWeight:900, color:"#f1f5f9", fontVariantNumeric:"tabular-nums" }}>
+                      {m.hs} – {m.as}
+                    </div>
+                  ) : (
+                    <div>
+                      <div style={{ fontSize:18, fontWeight:700, color:"#334155" }}>VS</div>
+                      <div style={{ fontSize:11, color:"#475569", marginTop:4 }}>Αγώνας {i+1}</div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Away team */}
+                <div style={{ flex:1, display:"flex", alignItems:"center", gap:12 }}>
+                  <TeamLogo teamId={m.away} size={44}/>
+                  <span style={{ fontSize:15, fontWeight:awayWon?800:600, color:awayWon?"#f1f5f9":"#94a3b8" }}>{at?.name}</span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Other matchdays summary */}
+      <div style={{ marginTop:24 }}>
+        <div style={{ fontSize:12, color:"#475569", fontWeight:700, letterSpacing:1, marginBottom:12 }}>ΟΛΕΣ ΟΙ ΑΓΩΝΙΣΤΙΚΕΣ</div>
+        {Array.from({length:maxMd},(_,i)=>i+1).map(md=>{
+          const mds = matches.filter(m=>(m.matchday||1)===md);
+          const done = mds.filter(m=>m.done).length;
+          const d = MATCHDAY_DATES[md];
+          return (
+            <div key={md} style={{ display:"flex", alignItems:"center", gap:12, padding:"10px 14px", borderRadius:8, marginBottom:6, background: md===nextMd?"#f9731611":"#111827", border:"1px solid "+(md===nextMd?"#f97316":"#1e2d45") }}>
+              <span style={{ fontWeight:800, fontSize:14, color:md===nextMd?"#f97316":"#64748b", minWidth:32 }}>{md}η</span>
+              <span style={{ fontSize:12, color:"#475569", flex:1 }}>{d?formatDate(d):"ΥΠΟ ΑΝΑΚΟΙΝΩΣΗ"}</span>
+              <span style={{ fontSize:12, fontWeight:700, color:done===5?"#22c55e":done>0?"#fbbf24":"#475569" }}>
+                {done===5?"✓ Ολοκληρώθηκε":done>0?done+"/5 αγώνες":"Εκκρεμεί"}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+
 function StandingsTab({ state, setState, isAdmin }) {
   const allTeams = [...state.teams.A, ...state.teams.B];
 
@@ -2166,7 +2307,7 @@ export default function App() {
     saveShared(shared, newVer);
   }
 
-  const TAB_TITLES = { standings:"Βαθμολογία", bracket:"Playoff Bracket", live:"Live Game", mvp:"MVP — Στατιστικά Παικτών", teams:"Ομάδες", stats:"Στατιστικά (Σύνολο)" , display:"Display / TV Scoreboard" };
+  const TAB_TITLES = { schedule:"Πρόγραμμα", standings:"Βαθμολογία", bracket:"Playoff Bracket", live:"Live Game", mvp:"MVP — Στατιστικά Παικτών", teams:"Ομάδες", stats:"Στατιστικά (Σύνολο)" , display:"Display / TV Scoreboard" };
 
   return (
     <div style={S.shell}>
@@ -2279,6 +2420,7 @@ export default function App() {
 
         {/* Page content */}
         <div className="content-area" style={S.content}>
+          {tab==="schedule"  && <ScheduleTab  state={state}/> }
           {tab==="standings" && <StandingsTab state={state} setState={setState} isAdmin={isAdmin}/>}
           {tab==="bracket"  && <BracketTab  state={state} setState={setState} isAdmin={isAdmin}/>}
           {tab==="live"     && <LiveTab     state={state} setState={setState} isAdmin={isAdmin} setControlledCourt={setControlledCourt}/>}
