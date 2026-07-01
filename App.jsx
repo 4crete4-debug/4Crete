@@ -121,6 +121,56 @@ const MATCHDAY_DATES = {
   // 5, 6, 7, 8, 9 — ΥΠΟ ΑΝΑΚΟΙΝΩΣΗ
 };
 
+// ─── RECOVERED GAMES (26/6 — σώθηκαν από τα court snapshots) ──────────────────
+const RECOVERED_GAMES = [
+  {
+    teamA: { teamId:"A1", score:83, players:[
+      {name:"Θάνος Επιτροπάκης",key:"A1:0",pts:14,reb:12,ast:2,fouls:0,threes:0},
+      {name:"Αλέξανδρος Δανδούτης",key:"A1:1",pts:4,reb:4,ast:5,fouls:0,threes:1},
+      {name:"Σόλωνας Βλαχάκης",key:"A1:2",pts:21,reb:3,ast:1,fouls:0,threes:7},
+      {name:"Επίμαχος Πάσχος",key:"A1:3",pts:16,reb:7,ast:7,fouls:0,threes:4},
+      {name:"Γιάννης Γουμενάκης",key:"A1:4",pts:0,reb:0,ast:0,fouls:0,threes:0},
+      {name:"Δημήτρης Βιδάκης",key:"A1:5",pts:28,reb:21,ast:2,fouls:1,threes:1},
+    ]},
+    teamB: { teamId:"A6", score:81, players:[
+      {name:"Δημήτρης Δαμουλάκης",key:"A6:0",pts:24,reb:17,ast:1,fouls:0,threes:4},
+      {name:"Άγγελος Λαβντάρι",key:"A6:1",pts:0,reb:1,ast:1,fouls:0,threes:0},
+      {name:"Arlaen Kasumlari",key:"A6:2",pts:15,reb:4,ast:2,fouls:1,threes:3},
+      {name:"Adrian Kasumlari",key:"A6:3",pts:20,reb:14,ast:2,fouls:0,threes:3},
+      {name:"Γιώργος Γερογιαννάκης",key:"A6:4",pts:2,reb:1,ast:0,fouls:0,threes:0},
+      {name:"Μάριος Χατζηδημητρίου",key:"A6:5",pts:0,reb:0,ast:0,fouls:0,threes:0},
+      {name:"Γιάννης Λαντζουράκης",key:"A6:6",pts:0,reb:0,ast:0,fouls:0,threes:0},
+      {name:"Βασιλάκης Αλέξανδρος",key:"A6:7",pts:10,reb:12,ast:3,fouls:1,threes:1},
+      {name:"Γιάννης Σταματάκης",key:"A6:8",pts:10,reb:7,ast:5,fouls:0,threes:2},
+    ]},
+    mvpKey:"A1:5", date:"",
+  },
+  {
+    teamA: { teamId:"B6", score:77, players:[
+      {name:"Τίτος Χατζηδάκης",key:"B6:0",pts:6,reb:7,ast:2,fouls:1,threes:0},
+      {name:"Γεώργιος Καραβιώτης",key:"B6:1",pts:14,reb:7,ast:1,fouls:1,threes:3},
+      {name:"Νίκος Δάλλας",key:"B6:2",pts:7,reb:14,ast:1,fouls:0,threes:0},
+      {name:"Γεώργιος Αντωνογιαννάκης",key:"B6:3",pts:0,reb:0,ast:0,fouls:0,threes:0},
+      {name:"Μιχάλης Μαρής",key:"B6:4",pts:4,reb:13,ast:1,fouls:1,threes:0},
+      {name:"Σταύρος Λυρώνης",key:"B6:5",pts:12,reb:4,ast:4,fouls:1,threes:2},
+      {name:"Παναγιώτης Λαμπράκης",key:"B6:6",pts:34,reb:11,ast:4,fouls:2,threes:5},
+    ]},
+    teamB: { teamId:"A4", score:70, players:[
+      {name:"Χρυσόστομος Σιδηρόπουλος",key:"A4:0",pts:34,reb:4,ast:0,fouls:3,threes:10},
+      {name:"Παναγιώτης Σπιλιωτάκης",key:"A4:1",pts:5,reb:8,ast:2,fouls:3,threes:0},
+      {name:"Δημήτρης Μπαρλιάς",key:"A4:2",pts:0,reb:0,ast:0,fouls:0,threes:0},
+      {name:"Μιχάλης Λυβιάκης",key:"A4:3",pts:0,reb:0,ast:0,fouls:0,threes:0},
+      {name:"Κωνσταντίνος Καλυβιώτης",key:"A4:4",pts:6,reb:9,ast:2,fouls:3,threes:0},
+      {name:"Παναγιώτης Σικαλιάς",key:"A4:5",pts:0,reb:0,ast:0,fouls:0,threes:0},
+      {name:"Γεράσιμος Δάγλας",key:"A4:6",pts:0,reb:0,ast:0,fouls:0,threes:0},
+      {name:"Γιώργος Μαρκόπουλος",key:"A4:7",pts:25,reb:10,ast:5,fouls:2,threes:2},
+      {name:"Αλέξανδρος Παπαμαργαρίτης",key:"A4:8",pts:0,reb:0,ast:0,fouls:0,threes:0},
+    ]},
+    mvpKey:"B6:6", date:"",
+  },
+];
+
+
 
 
 function defaultState() {
@@ -1142,6 +1192,15 @@ function CourtPanel({ courtNum, court: rawCourt, allTeams, state, setState, isAd
 
       next.courts = {...prev.courts,[courtNum]:{...c,active:false}};
       next.version = Date.now();
+
+      // Force an immediate Firebase write of shared data (incl. boxScores),
+      // so it can't be lost to the debounce timer or a snapshot race condition.
+      try {
+        const sharedNext = {...next};
+        delete sharedNext.courts;
+        setDoc(DOC_REF, { shared: JSON.stringify(sharedNext), shared_v: Date.now() }, { merge: true });
+      } catch(e){ console.error("Box-score save failed:", e); }
+
       return next;
     });
   }
@@ -2422,6 +2481,59 @@ export default function App() {
     saveTimers.current.shared = setTimeout(()=>saveShared(shared, newVer), 500);
   },[state.teams, state.matchesA, state.matchesB, state.playoffs, state.playerStats, state.mvpHistory, state.boxScores]);
 
+  // handleRecovery: restore the two games recovered from court snapshots (26/6)
+  async function handleRecovery(){
+    if(state.boxScores && state.boxScores["A1_A6"]){
+      alert("Η ανακτηση εχει ηδη γινει (υπαρχει box score A1_A6)."); return;
+    }
+    if(!window.confirm("ΑΝΑΚΤΗΣΗ 2 ΑΓΩΝΩΝ: Ποτηρι 83-81 Feta και Balkan 77-70 Χαμηλα. Θα περασουν σε βαθμολογια, στατιστικα, MVP και box scores. Συνεχεια;")) return;
+    try {
+      const next = {...state};
+      const ps = {...next.playerStats};
+      const bs = {...(next.boxScores||{})};
+      let mvps = [...(next.mvpHistory||[])];
+      let ma = next.matchesA.map(x=>({...x}));
+
+      RECOVERED_GAMES.forEach(g=>{
+        const idA = g.teamA.teamId, idB = g.teamB.teamId;
+        const sA = g.teamA.score, sB = g.teamB.score;
+        // 1) player totals
+        [...g.teamA.players, ...g.teamB.players].forEach(p=>{
+          if(!ps[p.key]) ps[p.key] = {pts:0,reb:0,ast:0,fouls:0,threes:0,games:0,name:p.name};
+          ps[p.key] = {...ps[p.key],
+            pts:(ps[p.key].pts||0)+p.pts, reb:(ps[p.key].reb||0)+p.reb,
+            ast:(ps[p.key].ast||0)+p.ast, fouls:(ps[p.key].fouls||0)+(p.fouls||0),
+            threes:(ps[p.key].threes||0)+(p.threes||0), games:(ps[p.key].games||0)+1,
+            name: ps[p.key].name || p.name };
+        });
+        // 2) box score
+        bs[[idA,idB].sort().join("_")] = g;
+        // 3) MVP entry
+        const all = [...g.teamA.players, ...g.teamB.players];
+        const mvp = all.find(p=>p.key===g.mvpKey) || all[0];
+        const [mvpTeam] = mvp.key.split(":");
+        mvps.push({matchday:mvps.length+1, name:mvp.name, teamId:mvpTeam,
+          eff:mvp.pts+mvp.reb+mvp.ast-(mvp.fouls||0), pts:mvp.pts, reb:mvp.reb, ast:mvp.ast, fouls:mvp.fouls||0});
+        // 4) score to standings
+        ma = ma.map(mm=>{
+          const same = (mm.home===idA&&mm.away===idB)||(mm.home===idB&&mm.away===idA);
+          if(!same || mm.done) return mm;
+          const hs = mm.home===idA ? sA : sB;
+          const as = mm.home===idA ? sB : sA;
+          return {...mm, hs:String(hs), as:String(as), done:true};
+        });
+      });
+
+      next.playerStats = ps; next.boxScores = bs; next.mvpHistory = mvps; next.matchesA = ma;
+      next.version = Date.now();
+
+      const sharedNext = {...next}; delete sharedNext.courts;
+      await setDoc(DOC_REF, { shared: JSON.stringify(sharedNext), shared_v: Date.now() }, { merge:true });
+      setState(next);
+      alert("Ανακτηση ολοκληρωθηκε! 2 αγωνες περασαν παντου. Ανανεωσε τη σελιδα.");
+    } catch(e){ alert("Σφαλμα: " + e.message); }
+  }
+
   // handleMigration: migrate old Firebase data to new 10-team structure
   async function handleMigration(){
     const msg = "SMART MIGRATION - Θα διατηρηθουν: Στατιστικα, MVP, Αποτελεσματα. Θα ανανεωθουν: Ομαδες, Προγραμμα. Προχωραμε;";
@@ -2566,6 +2678,7 @@ export default function App() {
               <>
                 <button onClick={()=>setIsAdmin(false)} style={{ ...S.btnGhost, color:"#f97316", borderColor:"#f9731633" }}>🔓 Admin</button>
                 <button onClick={handleMigration} style={{ ...S.btnGhost, color:"#f59e0b", borderColor:"#f59e0b33", fontSize:11 }} title="Ενημέρωση ομάδων">🔄 Migration</button>
+                <button onClick={handleRecovery} style={{ ...S.btnGhost, color:"#22c55e", borderColor:"#22c55e33", fontSize:11 }} title="Επαναφορά αγώνων 26/6">🚑 Ανάκτηση</button>
               </>
             ) : (
               <button onClick={()=>setShowPin(true)} style={S.btnSecondary}>🔒 <span className="admin-btn-text">Σύνδεση Admin</span></button>
