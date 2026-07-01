@@ -2481,12 +2481,15 @@ export default function App() {
     saveTimers.current.shared = setTimeout(()=>saveShared(shared, newVer), 500);
   },[state.teams, state.matchesA, state.matchesB, state.playoffs, state.playerStats, state.mvpHistory, state.boxScores]);
 
-  // handleRecovery: restore the two games recovered from court snapshots (26/6)
+  // handleRecovery: restore the two games saved in court snapshots (26/6).
+  // Both games (Ποτηρι-Feta 83-81, Balkan-Χαμηλα 77-70) were lost from playerStats
+  // due to the simultaneous-save race, so we add them in full. Guarded against
+  // double-run via a boxScores marker.
   async function handleRecovery(){
-    if(state.boxScores && state.boxScores["A1_A6"]){
-      alert("Η ανακτηση εχει ηδη γινει (υπαρχει box score A1_A6)."); return;
+    if(state.boxScores && state.boxScores["A1_A6"] && state.boxScores["A4_B6"]){
+      alert("Η ανακτηση εχει ηδη γινει (υπαρχουν τα box scores)."); return;
     }
-    if(!window.confirm("ΑΝΑΚΤΗΣΗ 2 ΑΓΩΝΩΝ: Ποτηρι 83-81 Feta και Balkan 77-70 Χαμηλα. Θα περασουν σε βαθμολογια, στατιστικα, MVP και box scores. Συνεχεια;")) return;
+    if(!window.confirm("ΑΝΑΚΤΗΣΗ 2 ΑΓΩΝΩΝ:\n\nΠοτηρι 83-81 Feta\nBalkan 77-70 Χαμηλα\n\nΘα προστεθουν σε στατιστικα, box scores, MVP και βαθμολογια. Συνεχεια;")) return;
     try {
       const next = {...state};
       const ps = {...next.playerStats};
@@ -2497,7 +2500,10 @@ export default function App() {
       RECOVERED_GAMES.forEach(g=>{
         const idA = g.teamA.teamId, idB = g.teamB.teamId;
         const sA = g.teamA.score, sB = g.teamB.score;
-        // 1) player totals
+        const boxKey = [idA,idB].sort().join("_");
+        if(bs[boxKey]) return; // αυτος ο αγωνας εχει ηδη ανακτηθει
+
+        // 1) player totals — ολοι οι παικτες και των 2 ομαδων (+1 game)
         [...g.teamA.players, ...g.teamB.players].forEach(p=>{
           if(!ps[p.key]) ps[p.key] = {pts:0,reb:0,ast:0,fouls:0,threes:0,games:0,name:p.name};
           ps[p.key] = {...ps[p.key],
@@ -2506,14 +2512,17 @@ export default function App() {
             threes:(ps[p.key].threes||0)+(p.threes||0), games:(ps[p.key].games||0)+1,
             name: ps[p.key].name || p.name };
         });
+
         // 2) box score
-        bs[[idA,idB].sort().join("_")] = g;
+        bs[boxKey] = g;
+
         // 3) MVP entry
         const all = [...g.teamA.players, ...g.teamB.players];
         const mvp = all.find(p=>p.key===g.mvpKey) || all[0];
         const [mvpTeam] = mvp.key.split(":");
         mvps.push({matchday:mvps.length+1, name:mvp.name, teamId:mvpTeam,
           eff:mvp.pts+mvp.reb+mvp.ast-(mvp.fouls||0), pts:mvp.pts, reb:mvp.reb, ast:mvp.ast, fouls:mvp.fouls||0});
+
         // 4) score to standings
         ma = ma.map(mm=>{
           const same = (mm.home===idA&&mm.away===idB)||(mm.home===idB&&mm.away===idA);
@@ -2530,7 +2539,7 @@ export default function App() {
       const sharedNext = {...next}; delete sharedNext.courts;
       await setDoc(DOC_REF, { shared: JSON.stringify(sharedNext), shared_v: Date.now() }, { merge:true });
       setState(next);
-      alert("Ανακτηση ολοκληρωθηκε! 2 αγωνες περασαν παντου. Ανανεωσε τη σελιδα.");
+      alert("Ανακτηση ολοκληρωθηκε! Οι 2 αγωνες περασαν σε στατιστικα, box scores, MVP και βαθμολογια. Ανανεωσε τη σελιδα.");
     } catch(e){ alert("Σφαλμα: " + e.message); }
   }
 
