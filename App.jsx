@@ -138,6 +138,8 @@ function defaultState() {
       2: { active:false, period:1, timeLeft:480, running:false, gameOver:false, teamA:{ teamId:"", score:0, fouls:0, players:[] }, teamB:{ teamId:"", score:0, fouls:0, players:[] } },
     },
     playerStats: {},
+    mvpHistory: [],
+    boxScores: {},
     version: Date.now(),
   };
 }
@@ -353,9 +355,117 @@ function Sidebar({ tab, setTab, isAdmin, liveActive, liveCount }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // TAB: SCHEDULE (Επόμενη Αγωνιστική)
 // ══════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════
+// BOX SCORE MODAL — shows per-game player stats
+// ══════════════════════════════════════════════════════════════════════════════
+function BoxScoreModal({ state, matchKey, homeId, awayId, onClose }) {
+  const allTeams = [...state.teams.A, ...state.teams.B];
+  const box = (state.boxScores||{})[matchKey];
+
+  const homeTeam = allTeams.find(t=>t.id===homeId);
+  const awayTeam = allTeams.find(t=>t.id===awayId);
+
+  if(!box){
+    return (
+      <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.8)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
+        <div onClick={e=>e.stopPropagation()} style={{ background:"#0d1220", border:"1px solid #1e2d45", borderRadius:16, padding:32, maxWidth:420, textAlign:"center" }}>
+          <div style={{ fontSize:48, marginBottom:12 }}>📋</div>
+          <div style={{ fontSize:16, fontWeight:700, color:"#f1f5f9", marginBottom:8 }}>Δεν υπάρχουν αναλυτικά στατιστικά</div>
+          <div style={{ fontSize:13, color:"#64748b", marginBottom:20 }}>Αυτός ο αγώνας καταχωρήθηκε πριν την προσθήκη της λειτουργίας box score, ή το σκορ μπήκε χειροκίνητα.</div>
+          <button onClick={onClose} style={{ ...S.btnPrimary, padding:"10px 24px" }}>Κλείσιμο</button>
+        </div>
+      </div>
+    );
+  }
+
+  // Orient box to home/away
+  const homeBox = box.teamA.teamId===homeId ? box.teamA : box.teamB;
+  const awayBox = box.teamA.teamId===homeId ? box.teamB : box.teamA;
+
+  const renderTeam = (teamBox, team, accent) => {
+    const sorted = [...teamBox.players].sort((a,b)=>{
+      const ea=a.pts+a.reb+a.ast-a.fouls, eb=b.pts+b.reb+b.ast-b.fouls;
+      return eb-ea||b.pts-a.pts;
+    });
+    return (
+      <div style={{ marginBottom:20 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
+          <TeamLogo teamId={teamBox.teamId} size={32}/>
+          <span style={{ fontSize:16, fontWeight:800, color:"#f1f5f9", flex:1 }}>{team?.name}</span>
+          <span style={{ fontSize:24, fontWeight:900, color:accent }}>{teamBox.score}</span>
+        </div>
+        <div style={{ overflowX:"auto" }}>
+          <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+            <thead>
+              <tr style={{ background:"#0d1220" }}>
+                <th style={{ ...S.th, textAlign:"left", padding:"6px 8px" }}>ΠΑΙΚΤΗΣ</th>
+                <th style={{ ...S.th, textAlign:"center", padding:"6px 6px", color:accent }}>ΠΤΣ</th>
+                <th style={{ ...S.th, textAlign:"center", padding:"6px 6px" }}>REB</th>
+                <th style={{ ...S.th, textAlign:"center", padding:"6px 6px" }}>AST</th>
+                <th style={{ ...S.th, textAlign:"center", padding:"6px 6px" }}>FL</th>
+                <th style={{ ...S.th, textAlign:"center", padding:"6px 6px", color:"#a855f7" }}>3PT</th>
+                <th style={{ ...S.th, textAlign:"center", padding:"6px 6px", color:"#fbbf24" }}>EFF</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((p,i)=>{
+                const eff = p.pts+p.reb+p.ast-p.fouls;
+                const isMvp = p.key===box.mvpKey;
+                return (
+                  <tr key={p.key||i} style={{ background:isMvp?accent+"18":i%2===0?"#0d1220":"transparent" }}>
+                    <td style={{ ...S.td, padding:"6px 8px", fontWeight:600, color:"#f1f5f9" }}>
+                      {isMvp && <span style={{ marginRight:4 }}>⭐</span>}{p.name}
+                    </td>
+                    <td style={{ ...S.td, textAlign:"center", padding:"6px 6px", fontWeight:700, color:"#f1f5f9" }}>{p.pts}</td>
+                    <td style={{ ...S.td, textAlign:"center", padding:"6px 6px", color:"#94a3b8" }}>{p.reb}</td>
+                    <td style={{ ...S.td, textAlign:"center", padding:"6px 6px", color:"#94a3b8" }}>{p.ast}</td>
+                    <td style={{ ...S.td, textAlign:"center", padding:"6px 6px", color:p.fouls>=5?"#ef4444":"#64748b" }}>{p.fouls}</td>
+                    <td style={{ ...S.td, textAlign:"center", padding:"6px 6px", color:"#a855f7" }}>{p.threes}</td>
+                    <td style={{ ...S.td, textAlign:"center", padding:"6px 6px", fontWeight:700, color:"#fbbf24" }}>{eff}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", zIndex:1000, display:"flex", alignItems:"flex-start", justifyContent:"center", padding:20, overflowY:"auto" }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:"#0d1220", border:"1px solid #1e2d45", borderRadius:16, padding:24, maxWidth:560, width:"100%", marginTop:40, marginBottom:40 }}>
+        {/* Header */}
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+          <span style={{ fontSize:12, fontWeight:700, letterSpacing:1, color:"#64748b" }}>BOX SCORE</span>
+          <button onClick={onClose} style={{ background:"#1e2d45", border:"none", borderRadius:8, color:"#94a3b8", fontSize:16, width:32, height:32, cursor:"pointer" }}>✕</button>
+        </div>
+        {/* Final score banner */}
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:16, padding:"12px 0 20px", borderBottom:"1px solid #1e2d45", marginBottom:20 }}>
+          <div style={{ textAlign:"center", flex:1 }}>
+            <TeamLogo teamId={homeId} size={40}/>
+            <div style={{ fontSize:12, color:"#94a3b8", marginTop:4 }}>{homeTeam?.name}</div>
+          </div>
+          <div style={{ fontSize:32, fontWeight:900, color:"#f1f5f9", whiteSpace:"nowrap" }}>
+            {homeBox.score} <span style={{ color:"#334155" }}>–</span> {awayBox.score}
+          </div>
+          <div style={{ textAlign:"center", flex:1 }}>
+            <TeamLogo teamId={awayId} size={40}/>
+            <div style={{ fontSize:12, color:"#94a3b8", marginTop:4 }}>{awayTeam?.name}</div>
+          </div>
+        </div>
+        {renderTeam(homeBox, homeTeam, "#f97316")}
+        {renderTeam(awayBox, awayTeam, "#3b82f6")}
+      </div>
+    </div>
+  );
+}
+
+
 function ScheduleTab({ state }) {
   const allTeams = [...state.teams.A, ...state.teams.B];
   const matches = state.matchesA;
+  const [boxMatch, setBoxMatch] = useState(null); // {matchKey, homeId, awayId}
 
   // Find the next unplayed matchday
   const maxMd = Math.max(...matches.map(m=>m.matchday||1));
@@ -419,11 +529,15 @@ function ScheduleTab({ state }) {
           const homeWon = done && parseInt(m.hs)>parseInt(m.as);
           const awayWon = done && parseInt(m.as)>parseInt(m.hs);
           return (
-            <div key={m.id} style={{
-              background: done?"#0a1a0f":"#111827",
-              border:"1px solid "+(done?"#22c55e33":"#1e2d45"),
-              borderRadius:12, padding:"18px 20px",
-            }}>
+            <div key={m.id}
+              onClick={done ? ()=>setBoxMatch({matchKey:[m.home,m.away].sort().join("_"), homeId:m.home, awayId:m.away}) : undefined}
+              style={{
+                background: done?"#0a1a0f":"#111827",
+                border:"1px solid "+(done?"#22c55e33":"#1e2d45"),
+                borderRadius:12, padding:"18px 20px",
+                cursor: done?"pointer":"default",
+                transition:"all 0.15s",
+              }}>
               <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}>
                 {/* Home team */}
                 <div style={{ flex:1, display:"flex", alignItems:"center", gap:12, justifyContent:"flex-end" }}>
@@ -434,8 +548,11 @@ function ScheduleTab({ state }) {
                 {/* Score / VS */}
                 <div style={{ textAlign:"center", minWidth:90 }}>
                   {done ? (
-                    <div style={{ fontSize:28, fontWeight:900, color:"#f1f5f9", fontVariantNumeric:"tabular-nums" }}>
-                      {m.hs} – {m.as}
+                    <div>
+                      <div style={{ fontSize:28, fontWeight:900, color:"#f1f5f9", fontVariantNumeric:"tabular-nums" }}>
+                        {m.hs} – {m.as}
+                      </div>
+                      <div style={{ fontSize:10, color:"#22c55e", marginTop:2 }}>📊 στατιστικά</div>
                     </div>
                   ) : (
                     <div>
@@ -474,12 +591,23 @@ function ScheduleTab({ state }) {
           );
         })}
       </div>
+
+      {boxMatch && (
+        <BoxScoreModal
+          state={state}
+          matchKey={boxMatch.matchKey}
+          homeId={boxMatch.homeId}
+          awayId={boxMatch.awayId}
+          onClose={()=>setBoxMatch(null)}
+        />
+      )}
     </div>
   );
 }
 
 
 function StandingsTab({ state, setState, isAdmin }) {
+  const [boxMatch, setBoxMatch] = useState(null);
   const allTeams = [...state.teams.A, ...state.teams.B];
 
   function updateMatch(key, idx, field, val) {
@@ -522,6 +650,7 @@ function StandingsTab({ state, setState, isAdmin }) {
             </div>
             <span style={{ fontSize:12, color:"#475569" }}>{played}/{matches.length} αγώνες</span>
           </div>
+          <div className="scroll-x">
           <table style={S.table}>
             <thead>
               <tr style={{ background:"#0d1220" }}>
@@ -549,6 +678,7 @@ function StandingsTab({ state, setState, isAdmin }) {
               ))}
             </tbody>
           </table>
+          </div>
           <div style={{ padding:"10px 20px", fontSize:11, color:"#22c55e", borderTop:"1px solid #1e2d45" }}>
             ● Προκρίνονται οι 4 πρώτοι
           </div>
@@ -605,7 +735,12 @@ function StandingsTab({ state, setState, isAdmin }) {
                             </>
                           ) : (
                             <div style={{ display:"flex", alignItems:"center", gap:6, minWidth:80, justifyContent:"center" }}>
-                              <span style={{ fontWeight:900, fontSize:15, color:"#f1f5f9" }}>{m.done?`${m.hs} – ${m.as}`:"vs"}</span>
+                              <span
+                                onClick={m.done ? ()=>setBoxMatch({matchKey:[m.home,m.away].sort().join("_"), homeId:m.home, awayId:m.away}) : undefined}
+                                style={{ fontWeight:900, fontSize:15, color:m.done?"#f1f5f9":"#94a3b8", cursor:m.done?"pointer":"default", borderBottom:m.done?"1px dotted #22c55e66":"none" }}
+                                title={m.done?"Δες στατιστικά αγώνα":""}>
+                                {m.done?`${m.hs} – ${m.as}`:"vs"}
+                              </span>
                               {m.done && isAdmin && (
                                 <button onClick={()=>undoMatch(key,i)} style={{ ...S.btnGhost, padding:"2px 6px", fontSize:11 }}>↩</button>
                               )}
@@ -632,6 +767,10 @@ function StandingsTab({ state, setState, isAdmin }) {
   return (
     <div>
       {renderGroup("","#f97316",state.teams.A,state.matchesA,"matchesA")}
+
+      {boxMatch && (
+        <BoxScoreModal state={state} matchKey={boxMatch.matchKey} homeId={boxMatch.homeId} awayId={boxMatch.awayId} onClose={()=>setBoxMatch(null)}/>
+      )}
     </div>
   );
 }
@@ -967,7 +1106,18 @@ function CourtPanel({ courtNum, court: rawCourt, allTeams, state, setState, isAd
       // ── Transfer final score automatically ──
       const idA = c.teamA.teamId, idB = c.teamB.teamId;
       const sA = c.teamA.score, sB = c.teamB.score;
-      let next = {...prev, playerStats:ps, mvpHistory:[...(prev.mvpHistory||[]),newMvp]};
+      // ── Build box score for this game ──
+      const boxScore = {
+        teamA: { teamId: idA, score: sA, players: c.teamA.players.map(p=>({name:p.name, key:p.key, pts:p.pts, reb:p.reb, ast:p.ast, fouls:p.fouls||0, threes:p.threes||0})) },
+        teamB: { teamId: idB, score: sB, players: c.teamB.players.map(p=>({name:p.name, key:p.key, pts:p.pts, reb:p.reb, ast:p.ast, fouls:p.fouls||0, threes:p.threes||0})) },
+        date: new Date().toISOString(),
+        mvpKey: gameMVP.key,
+      };
+      // matchKey identifies the fixture (sorted team ids)
+      const matchKey = [idA, idB].sort().join("_");
+      const newBoxScores = {...(prev.boxScores||{}), [matchKey]: boxScore};
+
+      let next = {...prev, playerStats:ps, mvpHistory:[...(prev.mvpHistory||[]),newMvp], boxScores:newBoxScores};
 
       // Helper to match a fixture by the two team ids (order-independent)
       const sameMatch = (m) => (m.home===idA&&m.away===idB)||(m.home===idB&&m.away===idA);
@@ -1276,6 +1426,7 @@ function CourtPanel({ courtNum, court: rawCourt, allTeams, state, setState, isAd
                 <span style={{fontWeight:800,fontSize:14,color}}>{label}</span>
               </div>
             </div>
+            <div className="scroll-x">
             <table style={S.table}>
               <thead>
                 <tr style={{background:"#0d1220"}}>
@@ -1288,6 +1439,7 @@ function CourtPanel({ courtNum, court: rawCourt, allTeams, state, setState, isAd
                 {data.players.map((p,i)=><PlayerRow key={i} p={p} pi={i} side={side} color={color} total={data.players.length}/>)}
               </tbody>
             </table>
+            </div>
           </div>
         ))}
       </div>
@@ -1581,6 +1733,7 @@ function MVPTab({ state, setState, isAdmin }) {
         {empty ? (
           <div style={{ textAlign:"center", padding:40, color:"#475569" }}>Παίξτε αγώνες για να δείτε στατιστικά</div>
         ) : (
+          <div className="scroll-x">
           <table style={S.table}>
             <thead>
               <tr style={{ background:"#0d1220" }}>
@@ -1619,6 +1772,7 @@ function MVPTab({ state, setState, isAdmin }) {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>
@@ -2266,7 +2420,7 @@ export default function App() {
     vShared.current = newVer;
     clearTimeout(saveTimers.current.shared);
     saveTimers.current.shared = setTimeout(()=>saveShared(shared, newVer), 500);
-  },[state.teams, state.matchesA, state.matchesB, state.playoffs, state.playerStats, state.mvpHistory]);
+  },[state.teams, state.matchesA, state.matchesB, state.playoffs, state.playerStats, state.mvpHistory, state.boxScores]);
 
   // handleMigration: migrate old Firebase data to new 10-team structure
   async function handleMigration(){
@@ -2336,11 +2490,12 @@ export default function App() {
           .stack-mobile { grid-template-columns: 1fr !important; }
           .stack-mobile-3 { grid-template-columns: 1fr !important; }
 
-          /* Tables scroll horizontally inside cards */
+          /* Tables: keep as proper tables, just allow horizontal scroll on the wrapper.
+             Do NOT set display:block on thead/tbody — it breaks column alignment. */
           .scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-          .scroll-x table { min-width: 480px; }
-          table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap; }
-          thead, tbody { display: table; width: 100%; min-width: 460px; }
+          .scroll-x table { min-width: 460px; }
+          table { width: 100%; border-collapse: collapse; }
+          th, td { white-space: nowrap; }
 
           /* Smaller scoreboard numbers on mobile */
           .big-score { font-size: 64px !important; }
